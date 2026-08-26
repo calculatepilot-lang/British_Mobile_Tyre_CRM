@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace BMT\Approvals;
 
 use BMT\Database;
-use Ramsey\Uuid\Uuid;
 use RuntimeException;
 
 final class ApprovalService
@@ -18,7 +17,7 @@ final class ApprovalService
             }
         }
 
-        $uuid = function_exists('Ramsey\\Uuid\\Uuid::uuid4') ? Uuid::uuid4()->toString() : bin2hex(random_bytes(16));
+        $uuid = $this->uuid4();
         $status = ($change['risk_level'] ?? 'medium') === 'low' ? 'planned' : 'pending_approval';
 
         $stmt = Database::connection()->prepare('INSERT INTO automation_changes (change_uuid, change_type, resource_type, resource_name, resource_id, reason, before_state, after_state, risk_level, status, reversible) VALUES (:change_uuid, :change_type, :resource_type, :resource_name, :resource_id, :reason, :before_state, :after_state, :risk_level, :status, :reversible)');
@@ -55,5 +54,15 @@ final class ApprovalService
         if ($stmt->rowCount() !== 1) {
             throw new RuntimeException('Change could not be rejected.');
         }
+    }
+
+    private function uuid4(): string
+    {
+        $bytes = random_bytes(16);
+        $bytes[6] = chr((ord($bytes[6]) & 0x0f) | 0x40);
+        $bytes[8] = chr((ord($bytes[8]) & 0x3f) | 0x80);
+        $hex = bin2hex($bytes);
+
+        return sprintf('%s-%s-%s-%s-%s', substr($hex, 0, 8), substr($hex, 8, 4), substr($hex, 12, 4), substr($hex, 16, 4), substr($hex, 20));
     }
 }
