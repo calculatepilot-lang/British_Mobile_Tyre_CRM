@@ -4,17 +4,36 @@ declare(strict_types=1);
 
 require dirname(__DIR__) . '/vendor/autoload.php';
 
+use BMT\GoogleAds\AccountAudit;
+use BMT\GoogleAds\ReportingService;
+
 $root = dirname(__DIR__);
 if (is_file($root . '/.env')) {
     Dotenv\Dotenv::createImmutable($root)->safeLoad();
 }
 
 date_default_timezone_set(getenv('APP_TIMEZONE') ?: 'Europe/London');
+$timestamp = date(DATE_ATOM);
+echo "[$timestamp] BMT daily audit started.\n";
 
 if ((getenv('AUTOMATION_MODE') ?: 'audit_only') !== 'audit_only') {
-    fwrite(STDERR, "Daily audit refuses to run mutations until a dedicated execution workflow is enabled.\n");
+    fwrite(STDERR, "Mutation mode is not implemented by this job. Continuing with read-only audit only.\n");
 }
 
-$timestamp = date(DATE_ATOM);
-echo "[$timestamp] BMT daily audit foundation job started in audit-only mode.\n";
-// Google Ads data collection and decision generation will be added before any mutation capability.
+try {
+    $audit = (new AccountAudit())->run();
+    $report = (new ReportingService())->collectYesterday();
+
+    $summary = [
+        'generated_at' => date(DATE_ATOM),
+        'mode' => 'audit_only',
+        'campaign_count' => $audit['campaign_count'],
+        'conversion_count' => $audit['conversion_count'],
+        'metrics_collected' => $report['count'],
+    ];
+
+    echo json_encode($summary, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR) . PHP_EOL;
+} catch (Throwable $e) {
+    fwrite(STDERR, '[' . date(DATE_ATOM) . '] Daily audit failed: ' . $e->getMessage() . PHP_EOL);
+    exit(1);
+}
