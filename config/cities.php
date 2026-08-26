@@ -1,12 +1,59 @@
 <?php
 
-// Add only cities that British Mobile Tyres actually serves.
-// No campaign creation code should activate a city unless enabled is true.
+// Verified initial service-city centres supplied by the owner.
+// These coordinates are campaign-planning centres, not a claim that Google Ads can
+// directly target individual road segments. Geo target IDs are resolved at runtime
+// through GeoTargetConstantService before any campaign is created.
 return [
     'mode' => 'review_required',
+    'country_code' => 'GB',
+    'location_presence_only' => true,
+    'road_strategy' => [
+        'enabled' => true,
+        'method' => 'city_geo_plus_proximity_corridors',
+        'note' => 'Major roads, motorways, highways and service areas must be resolved into approved proximity centres/corridors before activation. Do not invent POIs or road geometry.',
+        'service_station_strategy' => 'approved_proximity_centres',
+    ],
     'cities' => [
-        // ['name' => 'Manchester', 'enabled' => false, 'campaign_group' => 'North West'],
-        // ['name' => 'Liverpool', 'enabled' => false, 'campaign_group' => 'North West'],
-        // ['name' => 'Birmingham', 'enabled' => false, 'campaign_group' => 'West Midlands'],
+        ['name' => 'London', 'lat' => 51.5074, 'lng' => -0.1278, 'big' => true, 'enabled' => true],
+        ['name' => 'Birmingham', 'lat' => 52.4862, 'lng' => -1.8904, 'big' => true, 'enabled' => true],
+        ['name' => 'Manchester', 'lat' => 53.4808, 'lng' => -2.2426, 'big' => true, 'enabled' => true],
+        ['name' => 'Leeds', 'lat' => 53.8008, 'lng' => -1.5491, 'big' => true, 'enabled' => true],
+        ['name' => 'Liverpool', 'lat' => 53.4084, 'lng' => -2.9916, 'big' => true, 'enabled' => true],
+        ['name' => 'Sheffield', 'lat' => 53.3811, 'lng' => -1.4701, 'big' => false, 'enabled' => true],
+        ['name' => 'Bristol', 'lat' => 51.4545, 'lng' => -2.5879, 'big' => false, 'enabled' => true],
+        ['name' => 'Nottingham', 'lat' => 52.9548, 'lng' => -1.1581, 'big' => false, 'enabled' => true],
+        ['name' => 'Leicester', 'lat' => 52.6369, 'lng' => -1.1398, 'big' => false, 'enabled' => true],
+        ['name' => 'Coventry', 'lat' => 52.4068, 'lng' => -1.5197, 'big' => false, 'enabled' => true],
+        ['name' => 'Newcastle', 'lat' => 54.9783, 'lng' => -1.6178, 'big' => false, 'enabled' => true],
+        ['name' => 'Southampton', 'lat' => 50.9097, 'lng' => -1.4044, 'big' => false, 'enabled' => true],
+        ['name' => 'Portsmouth', 'lat' => 50.8198, 'lng' => -1.0880, 'big' => false, 'enabled' => true],
+        ['name' => 'Brighton', 'lat' => 50.8225, 'lng' => -0.1372, 'big' => false, 'enabled' => true],
+        ['name' => 'Reading', 'lat' => 51.4543, 'lng' => -0.9781, 'big' => false, 'enabled' => true],
+        ['name' => 'Milton Keynes', 'lat' => 52.0406, 'lng' => -0.7594, 'big' => false, 'enabled' => true],
+        ['name' => 'Luton', 'lat' => 51.8787, 'lng' => -0.4200, 'big' => false, 'enabled' => true],
+        ['name' => 'Northampton', 'lat' => 52.2405, 'lng' => -0.9027, 'big' => false, 'enabled' => true],
+        ['name' => 'Norwich', 'lat' => 52.6309, 'lng' => 1.2974, 'big' => false, 'enabled' => true],
+        ['name' => 'Derby', 'lat' => 52.9225, 'lng' => -1.4746, 'big' => false, 'enabled' => true],
+        ['name' => 'Stoke-on-Trent', 'lat' => 53.0027, 'lng' => -2.1794, 'big' => false, 'enabled' => true],
+        ['name' => 'Wolverhampton', 'lat' => 52.5870, 'lng' => -2.1288, 'big' => false, 'enabled' => true],
+        ['name' => 'Bradford', 'lat' => 53.7960, 'lng' => -1.7594, 'big' => false, 'enabled' => true],
+        ['name' => 'Hull', 'lat' => 53.7676, 'lng' => -0.3274, 'big' => false, 'enabled' => true],
+        ['name' => 'Oxford', 'lat' => 51.7520, 'lng' => -1.2577, 'big' => false, 'enabled' => true],
+        ['name' => 'Cambridge', 'lat' => 52.2053, 'lng' => 0.1218, 'big' => false, 'enabled' => true],
+        ['name' => 'York', 'lat' => 53.9600, 'lng' => -1.0873, 'big' => false, 'enabled' => true],
+        ['name' => 'Bournemouth', 'lat' => 50.7192, 'lng' => -1.8808, 'big' => false, 'enabled' => true],
+        ['name' => 'Swindon', 'lat' => 51.5558, 'lng' => -1.7797, 'big' => false, 'enabled' => true],
+        ['name' => 'Slough', 'lat' => 51.5105, 'lng' => -0.5950, 'big' => false, 'enabled' => true],
+        ['name' => 'Watford', 'lat' => 51.6565, 'lng' => -0.3903, 'big' => false, 'enabled' => true],
+        ['name' => 'Chelmsford', 'lat' => 51.7356, 'lng' => 0.4685, 'big' => false, 'enabled' => true],
+        ['name' => 'Ipswich', 'lat' => 52.0567, 'lng' => 1.1482, 'big' => false, 'enabled' => true],
+        ['name' => 'Peterborough', 'lat' => 52.5695, 'lng' => -0.2405, 'big' => false, 'enabled' => true],
+        ['name' => 'Preston', 'lat' => 53.7632, 'lng' => -2.7031, 'big' => false, 'enabled' => true],
+        ['name' => 'Bolton', 'lat' => 53.5768, 'lng' => -2.4282, 'big' => false, 'enabled' => true],
+        ['name' => 'Blackpool', 'lat' => 53.8175, 'lng' => -3.0357, 'big' => false, 'enabled' => true],
+        ['name' => 'Sunderland', 'lat' => 54.9069, 'lng' => -1.3838, 'big' => false, 'enabled' => true],
+        ['name' => 'Middlesbrough', 'lat' => 54.5742, 'lng' => -1.2350, 'big' => false, 'enabled' => true],
+        ['name' => 'Plymouth', 'lat' => 50.3755, 'lng' => -4.1427, 'big' => false, 'enabled' => true],
     ],
 ];
