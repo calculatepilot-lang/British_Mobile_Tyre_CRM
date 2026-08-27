@@ -10,6 +10,21 @@ $root = dirname(__DIR__, 2);
 if (is_file($root . '/.env')) {
     Dotenv\Dotenv::createImmutable($root)->safeLoad();
 }
+
+$env = static function (string $key, string $default = ''): string {
+    if (isset($_ENV[$key])) {
+        return (string) $_ENV[$key];
+    }
+
+    if (isset($_SERVER[$key])) {
+        return (string) $_SERVER[$key];
+    }
+
+    $value = getenv($key);
+
+    return $value !== false ? (string) $value : $default;
+};
+
 header('Content-Type: application/json; charset=UTF-8');
 
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
@@ -19,7 +34,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
     exit;
 }
 
-$expected = getenv('LEAD_API_KEY') ?: '';
+$expected = $env('LEAD_API_KEY');
 $provided = $_SERVER['HTTP_X_BMT_LEAD_KEY'] ?? '';
 if ($expected === '' || !is_string($provided) || !hash_equals($expected, $provided)) {
     http_response_code(401);
