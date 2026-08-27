@@ -9,9 +9,9 @@
   },
   "autoload": {
     "psr-4": {
-      "BMT\\": "app/",
-      "App\\": "app/"
-    }
+      "BMT\\": "app/"
+    },
+    "classmap": ["app/"]
   },
   "scripts": {
     "daily-audit": "php cron/daily_audit.php",
