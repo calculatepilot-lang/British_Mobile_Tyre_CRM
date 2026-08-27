@@ -1,0 +1,17 @@
+Options -Indexes
+RewriteEngine On
+
+# Never expose application code, configuration, dependencies, or database files.
+RewriteRule ^(?:app|config|database|cron|docs|vendor|tests)(?:/|$) - [F,L,NC]
+RewriteRule ^(?:\.env(?:\..*)?|composer\.(?:json|lock)|README\.md|\.gitignore)$ - [F,L,NC]
+
+# Keep the repository's /public directory internal when Hostinger uses the
+# repository root as the subdomain document root.
+RewriteRule ^public(?:/|$) - [F,L,NC]
+
+# Serve the explicit public API endpoint.
+RewriteRule ^api/leads\.php$ public/api/leads.php [L]
+
+# Route CRM pages through the front controller while preserving REQUEST_URI.
+RewriteRule ^$ index.php [L]
+RewriteRule ^ index.php [L]
