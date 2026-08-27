@@ -9,13 +9,15 @@
   },
   "autoload": {
     "psr-4": {
-      "BMT\\": "app/"
+      "BMT\\": "app/",
+      "App\\": "app/"
     }
   },
   "scripts": {
     "daily-audit": "php cron/daily_audit.php",
     "budget-guard": "php cron/budget_guard.php",
-    "monitoring": "php cron/monitoring.php"
+    "monitoring": "php cron/monitoring.php",
+    "daily-report": "php cron/send_daily_report.php"
   },
   "config": {
     "sort-packages": true,
