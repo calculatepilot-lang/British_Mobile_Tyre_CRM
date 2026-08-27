@@ -13,7 +13,13 @@ $root = dirname(__DIR__);
 if (is_file($root . '/.env')) {
     Dotenv\Dotenv::createImmutable($root)->safeLoad();
 }
-date_default_timezone_set(getenv('APP_TIMEZONE') ?: 'Europe/London');
+function envValue(string $key, string $default = ''): string {
+    if (isset($_ENV[$key])) return (string) $_ENV[$key];
+    if (isset($_SERVER[$key])) return (string) $_SERVER[$key];
+    $value = getenv($key);
+    return $value !== false ? (string) $value : $default;
+}
+date_default_timezone_set(envValue('APP_TIMEZONE', 'Europe/London'));
 AuthService::boot();
 $auth = new AuthService();
 $leads = new LeadRepository();
@@ -29,7 +35,7 @@ function render(string $title, string $body, ?array $user): never {
 
 if ($path === '/setup' && $method === 'POST') {
     $count = (int) Database::connection()->query('SELECT COUNT(*) FROM users')->fetchColumn();
-    $setupToken = getenv('INITIAL_SETUP_TOKEN') ?: '';
+    $setupToken = envValue('INITIAL_SETUP_TOKEN');
     if ($count > 0 || $setupToken === '' || !hash_equals($setupToken, (string)($_POST['setup_token'] ?? ''))) { http_response_code(403); render('Setup unavailable', '<h1>Setup unavailable</h1>', null); }
     if (!AuthService::verifyCsrf($_POST['csrf'] ?? null)) { http_response_code(419); render('Invalid request', '<h1>Invalid request</h1>', null); }
     $email = strtolower(trim((string)($_POST['email'] ?? '')));
@@ -95,5 +101,5 @@ if ($path === '/changes') render('Changes','<h1>Automation changes</h1><p>Google
 
 $data=$leads->dashboard(); $t=$data['today']; $cards='<div class="grid"><div class="card"><div>New leads today</div><div class="metric">'.h($t['total']??0).'</div></div><div class="card"><div>Qualified today</div><div class="metric">'.h($t['qualified']??0).'</div></div><div class="card"><div>Completed today</div><div class="metric">'.h($t['completed']??0).'</div></div><div class="card"><div>Completed revenue today</div><div class="metric">£'.h(number_format((float)($t['revenue']??0),2)).'</div></div></div>';
 $pipeline=''; foreach($data['pipeline'] as $p)$pipeline.='<tr><td>'.h(ucwords(str_replace('_',' ',$p['status']))).'</td><td>'.h($p['total']).'</td></tr>';
-$body='<div class="toolbar"><div><h1>Dashboard</h1><p>Welcome, '.h($user['name']).'. Automation mode: <strong>'.h(getenv('AUTOMATION_MODE') ?: 'audit_only').'</strong></p></div><a class="button" href="/leads/new">Add lead</a></div>'.$cards.'<h2>Lead pipeline</h2><table><tr><th>Status</th><th>Total</th></tr>'.$pipeline.'</table>';
+$body='<div class="toolbar"><div><h1>Dashboard</h1><p>Welcome, '.h($user['name']).'. Automation mode: <strong>'.h(envValue('AUTOMATION_MODE', 'audit_only')).'</strong></p></div><a class="button" href="/leads/new">Add lead</a></div>'.$cards.'<h2>Lead pipeline</h2><table><tr><th>Status</th><th>Total</th></tr>'.$pipeline.'</table>';
 render('Dashboard',$body,$user);
