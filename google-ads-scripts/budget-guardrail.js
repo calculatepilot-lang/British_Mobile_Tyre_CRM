@@ -25,7 +25,9 @@
  *   2. Click the blue "+" button, paste this entire file, name it
  *      "Daily Budget Guardrail".
  *   3. Update DAILY_CAPS below (or leave campaigns out of the map to use
- *      DEFAULT_DAILY_CAP_GBP for all of them).
+ *      DEFAULT_DAILY_CAP_PKR for all of them). Figures are in the account's
+ *      own billing currency — PKR for this account, since that's what
+ *      campaign.getStatsFor().getCost() returns for a PKR-currency account.
  *   4. Update NOTIFICATION_EMAIL and (optionally) CRM_LOG_ENDPOINT / CRM_LOG_KEY.
  *   5. Click "Preview" first to confirm it targets the campaigns you expect
  *      with no unintended pauses, then authorize and schedule hourly.
@@ -33,7 +35,7 @@
 
 // ---- Configuration ----
 
-var DEFAULT_DAILY_CAP_GBP = 15;
+var DEFAULT_DAILY_CAP_PKR = 5700; // ≈ £15 at ~380 PKR/GBP — review and adjust to your real target.
 
 // Optional per-campaign overrides. Campaign name must match exactly.
 var DAILY_CAPS = {
@@ -59,7 +61,7 @@ function main() {
   while (campaignIterator.hasNext()) {
     var campaign = campaignIterator.next();
     var name = campaign.getName();
-    var cap = DAILY_CAPS.hasOwnProperty(name) ? DAILY_CAPS[name] : DEFAULT_DAILY_CAP_GBP;
+    var cap = DAILY_CAPS.hasOwnProperty(name) ? DAILY_CAPS[name] : DEFAULT_DAILY_CAP_PKR;
 
     var stats = campaign.getStatsFor('TODAY');
     var spend = stats.getCost();
@@ -80,7 +82,7 @@ function main() {
 
 function notify(paused) {
   var lines = paused.map(function (p) {
-    return '- ' + p.name + ': spent £' + p.spend.toFixed(2) + ' (cap £' + p.cap.toFixed(2) + ') — PAUSED';
+    return '- ' + p.name + ': spent PKR ' + p.spend.toFixed(2) + ' (cap PKR ' + p.cap.toFixed(2) + ') — PAUSED';
   });
 
   var body = 'The following campaign(s) exceeded their daily budget cap and were automatically paused:\n\n'
@@ -106,7 +108,7 @@ function logToCrm(campaignName, spend, cap) {
         change_type: 'pause_campaign',
         resource_type: 'google_ads_campaign',
         resource_name: campaignName,
-        reason: 'Ads Script budget guardrail: spend £' + spend.toFixed(2) + ' exceeded cap £' + cap.toFixed(2) + ' for today.',
+        reason: 'Ads Script budget guardrail: spend PKR ' + spend.toFixed(2) + ' exceeded cap PKR ' + cap.toFixed(2) + ' for today.',
         risk_level: 'high',
         status: 'executed',
       }),

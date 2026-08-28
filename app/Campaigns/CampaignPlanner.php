@@ -67,7 +67,8 @@ final class CampaignPlanner
      * proposal, so a re-run never duplicates.
      *
      * Budget is split across enabled cities from
-     * automation_rules.max_daily_budget_gbp, weighted 2:1 for 'big' cities,
+     * automation_rules.max_daily_budget (the Google Ads account's own
+     * currency — PKR for this account), weighted 2:1 for 'big' cities,
      * and is itself only a suggestion for the reviewer — nothing spends
      * until a human approves and a (separately built) executor runs.
      *
@@ -77,7 +78,7 @@ final class CampaignPlanner
     {
         $plan = $this->build();
         $existing = array_map('mb_strtolower', $existingCampaignNames);
-        $dailyCap = (float) $this->automation['max_daily_budget_gbp'];
+        $dailyCap = (float) $this->automation['max_daily_budget'];
         $weightUnits = 0;
         foreach ($plan['markets'] as $market) {
             $weightUnits += $market['priority'] === 'high' ? 2 : 1;
@@ -112,7 +113,7 @@ final class CampaignPlanner
                     'city' => $market['city'],
                     'priority' => $market['priority'],
                     'planning_centre' => $market['planning_centre'],
-                    'suggested_daily_budget_gbp' => $suggestedDailyBudget,
+                    'suggested_daily_budget' => $suggestedDailyBudget,
                     'vehicle_types' => $market['vehicle_types'],
                     'road_strategy' => $market['road_strategy'],
                     'negative_keywords' => $plan['excluded_vehicle_terms'],

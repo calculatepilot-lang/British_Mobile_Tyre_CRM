@@ -54,7 +54,7 @@ final class DailyCampaignReport
     public function formatWhatsApp(array $r): string
     {
         return "BMT Google Ads Daily Report — {$r['date']}\n\n"
-            . "Spend: £{$r['cost']}\n"
+            . "Spend: PKR {$r['cost']}\n"
             . "Impressions: {$r['impressions']}\n"
             . "Clicks: {$r['clicks']}\n"
             . "Google Ads conversions: {$r['conversions']}\n\n"

@@ -152,7 +152,9 @@ final class ChangeExecutor
         }
 
         $newMicros = (int) round($currentMicros * (1 + $percent / 100));
-        $newMicros = max($newMicros, 1_000_000); // never below £1/day — a stray -100% must not zero a budget out
+        // Floor at 500 (account currency — PKR for this account) so a stray
+        // -100% proposal can never zero a live budget out entirely.
+        $newMicros = max($newMicros, 500_000_000);
 
         $budget = new CampaignBudget([
             'resource_name' => $budgetResourceName,

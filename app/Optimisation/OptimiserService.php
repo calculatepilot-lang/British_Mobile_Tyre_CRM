@@ -41,7 +41,7 @@ final class OptimiserService
      * - A campaign with at least `minimum_clicks_for_decision` clicks and
      *   zero conversions is proposed for a budget decrease of
      *   `max_auto_budget_change_percent`, OR a pause if it also has spent
-     *   more than one day's share of `max_daily_budget_gbp` with nothing to
+     *   more than one day's share of `max_daily_budget` with nothing to
      *   show for it — pausing always requires approval per
      *   `pause_requires_approval`.
      * - A campaign with at least `minimum_conversions_for_scale`
@@ -78,7 +78,7 @@ final class OptimiserService
                     'resource_type' => 'google_ads_campaign_budget',
                     'resource_name' => $name,
                     'reason' => sprintf(
-                        '%d clicks and £%.2f spent on %s with zero recorded conversions — no signal of value being returned.',
+                        '%d clicks and PKR %.2f spent on %s with zero recorded conversions — no signal of value being returned.',
                         $clicks,
                         $cost,
                         $date
@@ -86,7 +86,7 @@ final class OptimiserService
                     'after_state' => [
                         'metric_date' => $date,
                         'clicks' => $clicks,
-                        'cost_gbp' => $cost,
+                        'cost' => $cost,
                         'conversions' => $conversions,
                         'proposed_change_percent' => -$maxBudgetChangePercent,
                     ],
@@ -107,7 +107,7 @@ final class OptimiserService
                     'resource_type' => 'google_ads_campaign_budget',
                     'resource_name' => $name,
                     'reason' => sprintf(
-                        '%.1f recorded conversions on %s (spend £%.2f) — performance supports testing a higher budget.',
+                        '%.1f recorded conversions on %s (spend PKR %.2f) — performance supports testing a higher budget.',
                         $conversions,
                         $date,
                         $cost
@@ -115,7 +115,7 @@ final class OptimiserService
                     'after_state' => [
                         'metric_date' => $date,
                         'clicks' => $clicks,
-                        'cost_gbp' => $cost,
+                        'cost' => $cost,
                         'conversions' => $conversions,
                         'proposed_change_percent' => $maxBudgetChangePercent,
                     ],
