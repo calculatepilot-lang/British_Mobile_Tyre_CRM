@@ -19,16 +19,20 @@ final class ReportingService
 
         $rows = [];
         $db = Database::connection();
-        $upsert = $db->prepare('INSERT INTO daily_metrics (metric_date, scope_type, scope_id, scope_name, impressions, clicks, cost_micros, conversions, conversion_value) VALUES (:metric_date, :scope_type, :scope_id, :scope_name, :impressions, :clicks, :cost_micros, :conversions, :conversion_value) ON DUPLICATE KEY UPDATE scope_name = VALUES(scope_name), impressions = VALUES(impressions), clicks = VALUES(clicks), cost_micros = VALUES(cost_micros), conversions = VALUES(conversions), conversion_value = VALUES(conversion_value)');
+        $upsert = $db->prepare(
+            'INSERT INTO daily_campaign_metrics (metric_date, campaign_id, campaign_name, impressions, clicks, cost_micros, conversions, conversion_value)
+             VALUES (:metric_date, :campaign_id, :campaign_name, :impressions, :clicks, :cost_micros, :conversions, :conversion_value)
+             ON DUPLICATE KEY UPDATE campaign_id = VALUES(campaign_id), impressions = VALUES(impressions), clicks = VALUES(clicks),
+                 cost_micros = VALUES(cost_micros), conversions = VALUES(conversions), conversion_value = VALUES(conversion_value)'
+        );
 
         foreach ($service->search($customerId, $query)->iterateAllElements() as $row) {
             $campaign = $row->getCampaign();
             $metrics = $row->getMetrics();
             $record = [
                 'metric_date' => $date,
-                'scope_type' => 'campaign',
-                'scope_id' => (string) $campaign->getId(),
-                'scope_name' => $campaign->getName(),
+                'campaign_id' => (string) $campaign->getId(),
+                'campaign_name' => $campaign->getName(),
                 'impressions' => (int) $metrics->getImpressions(),
                 'clicks' => (int) $metrics->getClicks(),
                 'cost_micros' => (string) $metrics->getCostMicros(),

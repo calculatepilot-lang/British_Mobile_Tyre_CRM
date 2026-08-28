@@ -29,9 +29,69 @@ $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
 function h(mixed $value): string { return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8'); }
 function redirect(string $to): never { header('Location: ' . $to, true, 302); exit; }
+function statusBadge(string $status): string {
+    $label = h(ucwords(str_replace('_', ' ', $status)));
+    $palette = [
+        'new' => ['#EAF1FF', '#0B4FCF'], 'contacted' => ['#EAF1FF', '#0B4FCF'],
+        'qualified' => ['#FFF4E0', '#966400'], 'quoted' => ['#FFF4E0', '#966400'],
+        'booked' => ['#E8F7EE', '#0F7A3D'], 'completed' => ['#E8F7EE', '#0F7A3D'],
+        'lost' => ['#FBEAEA', '#B42318'], 'spam' => ['#FBEAEA', '#B42318'], 'rejected' => ['#FBEAEA', '#B42318'],
+        'duplicate' => ['#F1F0F5', '#5B5876'], 'existing_customer' => ['#F1F0F5', '#5B5876'],
+        'pending_approval' => ['#FFF4E0', '#966400'], 'planned' => ['#EAF1FF', '#0B4FCF'], 'approved' => ['#E8F7EE', '#0F7A3D'],
+        'executed' => ['#E8F7EE', '#0F7A3D'],
+    ];
+    [$bg, $fg] = $palette[$status] ?? ['#EDF0F4', '#3D4550'];
+    return '<span class="status" style="background:' . $bg . ';color:' . $fg . '">' . $label . '</span>';
+}
 function render(string $title, string $body, ?array $user): never {
-    $nav = $user ? '<aside><h2>BMT CRM</h2><a href="/">Dashboard</a><a href="/leads">Leads</a><a href="/leads/new">Add lead</a><a href="/changes">Changes</a><a href="/logout">Logout</a></aside>' : '';
-    echo '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' . h($title) . ' | BMT CRM</title><style>body{margin:0;font-family:Arial,sans-serif;background:#f5f7fb;color:#18202a}.layout{display:flex;min-height:100vh}aside{width:220px;background:#10233b;color:#fff;padding:24px}aside a{display:block;color:#dbe8f6;text-decoration:none;padding:10px 0}.content{flex:1;padding:28px;max-width:1200px}h1{margin-top:0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px}.card{background:#fff;border:1px solid #e1e6ee;border-radius:12px;padding:18px}.metric{font-size:28px;font-weight:bold}.toolbar{display:flex;justify-content:space-between;align-items:center;margin:16px 0}.button,button{display:inline-block;background:#1463c3;color:#fff;border:0;border-radius:7px;padding:10px 14px;text-decoration:none;cursor:pointer}table{width:100%;border-collapse:collapse;background:#fff}th,td{text-align:left;padding:10px;border-bottom:1px solid #e6eaf0;font-size:14px}input,select,textarea{width:100%;box-sizing:border-box;padding:10px;border:1px solid #cfd7e3;border-radius:7px;margin:5px 0 12px}.form{max-width:720px;background:#fff;padding:24px;border-radius:12px}.notice{padding:12px;border-radius:8px;background:#fff3cd;margin-bottom:16px}.status{padding:3px 8px;border-radius:20px;background:#edf2f7;font-size:12px}@media(max-width:700px){aside{width:auto;padding:12px}.layout{display:block}.content{padding:16px}}</style></head><body><div class="layout">' . $nav . '<main class="content">' . $body . '</main></div></body></html>'; exit;
+    $navItems = [['/', 'Dashboard'], ['/leads', 'Leads'], ['/leads/new', 'Add lead'], ['/changes', 'Changes']];
+    $navLinks = '';
+    foreach ($navItems as [$href, $label]) $navLinks .= '<a href="' . h($href) . '">' . h($label) . '</a>';
+    $nav = $user ? '<aside><div class="brand"><span class="brand-mark"></span><span>BMT CRM</span></div><nav>' . $navLinks . '</nav><a class="logout" href="/logout">Logout</a></aside>' : '';
+    echo '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' . h($title) . ' | BMT CRM</title><style>
+:root{--ink:#012169;--ink-soft:#0B2A6B;--brand:#C8102E;--brand-hover:#A50D25;--bg:#F4F6FA;--surface:#fff;--border:#E3E7EE;--text:#1A2130;--muted:#667085;--radius:12px;--shadow:0 1px 3px rgba(16,24,40,.06),0 1px 2px rgba(16,24,40,.04)}
+*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);font-size:14.5px;-webkit-font-smoothing:antialiased}
+.layout{display:flex;min-height:100vh}
+aside{width:232px;flex:0 0 232px;background:var(--ink);color:#fff;padding:22px 16px;display:flex;flex-direction:column;gap:20px}
+.brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:17px;letter-spacing:-.01em;padding:0 8px}
+.brand-mark{width:10px;height:10px;border-radius:3px;background:var(--brand);flex:0 0 auto}
+aside nav{display:flex;flex-direction:column;gap:2px}
+aside nav a{display:block;color:#C7D3EA;text-decoration:none;padding:10px 10px;border-radius:8px;font-size:14px;font-weight:600;transition:background-color .12s,color .12s}
+aside nav a:hover{background:rgba(255,255,255,.08);color:#fff}
+aside .logout{margin-top:auto;color:#8A9BC0;text-decoration:none;font-size:13px;padding:8px 10px}
+aside .logout:hover{color:#fff}
+.content{flex:1;padding:32px 36px;max-width:1180px;width:100%}
+h1{margin:0 0 4px;font-size:22px;font-weight:800;letter-spacing:-.015em;color:var(--ink)}
+h2{font-size:16px;font-weight:750;color:var(--ink);margin:28px 0 12px}
+h3{font-size:14px;font-weight:700;color:var(--ink)}
+p{color:var(--muted);line-height:1.55}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin:18px 0 8px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px 20px;box-shadow:var(--shadow)}
+.card>div:first-child{color:var(--muted);font-size:12.5px;font-weight:650;text-transform:uppercase;letter-spacing:.03em;margin-bottom:6px}
+.metric{font-size:30px;font-weight:800;color:var(--ink);letter-spacing:-.02em}
+.toolbar{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin:0 0 18px;flex-wrap:wrap}
+.toolbar p{margin:6px 0 0}
+.button,button{display:inline-flex;align-items:center;gap:6px;background:var(--ink);color:#fff;border:0;border-radius:9px;padding:10px 16px;font-size:13.5px;font-weight:650;text-decoration:none;cursor:pointer;transition:background-color .12s,transform .08s;white-space:nowrap}
+.button:hover,button:hover{background:var(--ink-soft)}
+.button:active,button:active{transform:translateY(1px)}
+button[style*="b42318"],button[style*="B42318"]{background:var(--brand)!important}
+button[style*="b42318"]:hover,button[style*="B42318"]:hover{background:var(--brand-hover)!important}
+table{width:100%;border-collapse:collapse;background:var(--surface);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow)}
+th{text-align:left;padding:12px 14px;font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);background:#FAFBFD;border-bottom:1px solid var(--border)}
+td{text-align:left;padding:13px 14px;border-bottom:1px solid var(--border);font-size:14px}
+tr:last-child td{border-bottom:0}
+tbody tr:hover td{background:#FAFBFD}
+table a{color:var(--ink);font-weight:650;text-decoration:none}
+table a:hover{text-decoration:underline}
+input,select,textarea{width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid var(--border);border-radius:9px;font:inherit;font-size:14px;margin:5px 0 14px;background:#fff;color:var(--text)}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--ink);box-shadow:0 0 0 3px rgba(1,33,105,.08)}
+label{font-size:13px;font-weight:650;color:var(--text)}
+.form{max-width:720px;background:var(--surface);padding:26px 28px;border-radius:var(--radius);box-shadow:var(--shadow);border:1px solid var(--border)}
+.notice{padding:12px 14px;border-radius:9px;background:#FFF4E0;color:#7A5200;border:1px solid #F5DEA6;margin-bottom:18px;font-size:13.5px;font-weight:600}
+.status{display:inline-flex;padding:3px 10px;border-radius:999px;font-size:11.5px;font-weight:700;letter-spacing:.01em}
+@media(max-width:760px){aside{width:auto;flex:none;padding:14px}.layout{display:block}.content{padding:18px}aside nav{flex-direction:row;flex-wrap:wrap}}
+</style></head><body><div class="layout">' . $nav . '<main class="content">' . $body . '</main></div></body></html>'; exit;
 }
 
 if ($path === '/setup' && $method === 'POST') {
@@ -91,11 +151,11 @@ if (preg_match('#^/leads/([^/]+)$#', $path, $m)) {
     $statuses=''; foreach(['new','contacted','qualified','quoted','booked','completed','lost','spam','duplicate','existing_customer'] as $s) $statuses.='<option value="'.h($s).'"'.($lead['status']===$s?' selected':'').'>'.h(ucwords(str_replace('_',' ',$s))).'</option>';
     $fields=['customer_name'=>'Customer name','customer_phone'=>'Phone','customer_email'=>'Email','service_requested'=>'Service requested','city'=>'City','postcode'=>'Postcode','quoted_amount'=>'Quoted amount','final_revenue'=>'Final revenue','quality_score'=>'Quality score 0-100','outcome_reason'=>'Outcome reason'];
     $inputs=''; foreach($fields as $key=>$label){$type=in_array($key,['quoted_amount','final_revenue','quality_score'],true)?'number':'text';$step=in_array($key,['quoted_amount','final_revenue'],true)?' step="0.01"':'';$min=$key==='quality_score'?' min="0" max="100"':'';$inputs.='<label>'.h($label).'<input type="'.$type.'"'.$step.$min.' name="'.h($key).'" value="'.h($lead[$key]??'').'"></label>';}
-    $body='<div class="toolbar"><div><h1>'.h($lead['public_id']).'</h1><p><span class="status">'.h($lead['status']).'</span> '.h($lead['lead_type']).' · '.h($lead['source']).'</p></div><a class="button" href="/leads">Back to leads</a></div><form class="form" method="post" action="/leads/'.rawurlencode($lead['public_id']).'/update"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><label>Status<select name="status">'.$statuses.'</select></label>'.$inputs.'<h3>Attribution</h3><p>Campaign: '.h($lead['campaign_name']??'—').' · Ad group: '.h($lead['ad_group_name']??'—').'</p><p>Keyword: '.h($lead['keyword_text']??'—').' · GCLID: '.h($lead['gclid']??'—').'</p><button>Save changes</button></form>';
+    $body='<div class="toolbar"><div><h1>'.h($lead['public_id']).'</h1><p>'.statusBadge($lead['status']).' &nbsp;'.h($lead['lead_type']).' · '.h($lead['source']).'</p></div><a class="button" href="/leads">Back to leads</a></div><form class="form" method="post" action="/leads/'.rawurlencode($lead['public_id']).'/update"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><label>Status<select name="status">'.$statuses.'</select></label>'.$inputs.'<h3>Attribution</h3><p>Campaign: '.h($lead['campaign_name']??'—').' · Ad group: '.h($lead['ad_group_name']??'—').'</p><p>Keyword: '.h($lead['keyword_text']??'—').' · GCLID: '.h($lead['gclid']??'—').'</p><button>Save changes</button></form>';
     render('Lead ' . $lead['public_id'], $body, $user);
 }
 if ($path === '/leads') {
-    $rows=''; foreach($leads->list(100) as $lead){$rows.='<tr><td><a href="/leads/'.rawurlencode($lead['public_id']).'">'.h($lead['public_id']).'</a></td><td>'.h($lead['status']).'</td><td>'.h($lead['lead_type']).'</td><td>'.h($lead['customer_name']?:'—').'</td><td>'.h($lead['city']?:'—').'</td><td>'.h($lead['campaign_name']?:'—').'</td><td>'.h($lead['created_at']).'</td></tr>';}
+    $rows=''; foreach($leads->list(100) as $lead){$rows.='<tr><td><a href="/leads/'.rawurlencode($lead['public_id']).'">'.h($lead['public_id']).'</a></td><td>'.statusBadge($lead['status']).'</td><td>'.h($lead['lead_type']).'</td><td>'.h($lead['customer_name']?:'—').'</td><td>'.h($lead['city']?:'—').'</td><td>'.h($lead['campaign_name']?:'—').'</td><td>'.h($lead['created_at']).'</td></tr>';}
     render('Leads','<div class="toolbar"><h1>Leads</h1><a class="button" href="/leads/new">Add lead</a></div><table><thead><tr><th>ID</th><th>Status</th><th>Type</th><th>Customer</th><th>City</th><th>Campaign</th><th>Created</th></tr></thead><tbody>'.$rows.'</tbody></table>',$user);
 }
 if (preg_match('#^/changes/([0-9a-f-]{36})/approve$#', $path, $m) && $method === 'POST') {
@@ -116,7 +176,7 @@ if ($path === '/changes') {
             ? '<form method="post" action="/changes/'.h($c['change_uuid']).'/approve" style="display:inline"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><button>Approve</button></form> '
               .'<form method="post" action="/changes/'.h($c['change_uuid']).'/reject" style="display:inline"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><button style="background:#b42318">Reject</button></form>'
             : '—';
-        $rows.='<tr><td>'.h($c['change_type']).'</td><td>'.h($c['resource_name']?:'—').'</td><td>'.h($c['reason']).'</td><td>'.h($c['risk_level']).'</td><td><span class="status">'.h(str_replace('_',' ',$c['status'])).'</span></td><td>'.h($c['created_at']).'</td><td>'.$actions.'</td></tr>';
+        $rows.='<tr><td>'.h($c['change_type']).'</td><td>'.h($c['resource_name']?:'—').'</td><td>'.h($c['reason']).'</td><td>'.h($c['risk_level']).'</td><td>'.statusBadge($c['status']).'</td><td>'.h($c['created_at']).'</td><td>'.$actions.'</td></tr>';
     }
     render('Changes','<h1>Automation changes</h1><p>Google Ads mutation execution remains disabled (automation mode: <strong>'.h(envValue('AUTOMATION_MODE','audit_only')).'</strong>). Approving a change here records the decision only — nothing is written to Google Ads until a reviewed executor is built.</p><table><thead><tr><th>Type</th><th>Resource</th><th>Reason</th><th>Risk</th><th>Status</th><th>Created</th><th>Action</th></tr></thead><tbody>'.($rows?:'<tr><td colspan="7">No automation changes yet.</td></tr>').'</tbody></table>',$user);
 }
