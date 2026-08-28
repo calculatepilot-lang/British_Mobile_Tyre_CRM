@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 require dirname(__DIR__) . '/vendor/autoload.php';
 
+use BMT\Campaigns\CampaignPlanner;
 use BMT\Conversions\ConversionPlanService;
 use BMT\Database;
 use BMT\GoogleAds\AccountAudit;
@@ -29,6 +30,9 @@ try {
     $queuedChangeIds = (new ConversionPlanService(new Database()))
         ->auditAndQueueMissingActions($audit['conversions']);
 
+    $existingCampaignNames = array_map(static fn(array $c): string => (string) $c['name'], $audit['campaigns']);
+    $queuedCampaignIds = (new CampaignPlanner())->queueCampaignProposals($existingCampaignNames);
+
     $summary = [
         'generated_at' => date(DATE_ATOM),
         'mode' => 'audit_only',
@@ -37,6 +41,8 @@ try {
         'metrics_collected' => $report['count'],
         'conversion_proposals_queued' => count($queuedChangeIds),
         'conversion_proposal_ids' => $queuedChangeIds,
+        'campaign_proposals_queued' => count($queuedCampaignIds),
+        'campaign_proposal_ids' => $queuedCampaignIds,
     ];
 
     echo json_encode($summary, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR) . PHP_EOL;
