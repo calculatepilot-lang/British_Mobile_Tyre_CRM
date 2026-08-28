@@ -51,7 +51,7 @@ function render(string $title, string $body, ?array $user): never {
         $isActive = $href === '/' ? $currentPath === '/' : str_starts_with($currentPath, $href);
         $navLinks .= '<a href="' . h($href) . '"' . ($isActive ? ' class="active"' : '') . '>' . h($label) . '</a>';
     }
-    $nav = $user ? '<aside><div class="brand"><span class="brand-mark"></span><span>BMT CRM</span></div><nav>' . $navLinks . '</nav><a class="logout" href="/logout">Logout</a></aside>' : '';
+    $nav = $user ? '<aside><div class="brand"><img src="/assets/logo.png" alt="British Mobile Tyres"><span>BMT CRM</span></div><nav>' . $navLinks . '</nav><a class="logout" href="/logout">Logout</a></aside>' : '';
     echo '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' . h($title) . ' | BMT CRM</title><style>
 :root{--ink:#012169;--ink-soft:#0B2A6B;--brand:#C8102E;--brand-hover:#A50D25;--bg:#F4F6FA;--surface:#fff;--border:#E3E7EE;--text:#1A2130;--muted:#667085;--radius:12px;--shadow:0 1px 3px rgba(16,24,40,.06),0 1px 2px rgba(16,24,40,.04)}
 *{box-sizing:border-box}
@@ -59,7 +59,7 @@ body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Hel
 .layout{display:flex;min-height:100vh}
 aside{width:232px;flex:0 0 232px;background:var(--ink);color:#fff;padding:22px 16px;display:flex;flex-direction:column;gap:20px}
 .brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:17px;letter-spacing:-.01em;padding:0 8px}
-.brand-mark{width:10px;height:10px;border-radius:3px;background:var(--brand);flex:0 0 auto}
+.brand img{width:28px;height:28px;object-fit:contain;flex:0 0 auto;border-radius:4px}
 aside nav{display:flex;flex-direction:column;gap:2px}
 aside nav a{display:block;color:#C7D3EA;text-decoration:none;padding:10px 10px;border-radius:8px;font-size:14px;font-weight:600;transition:background-color .12s,color .12s}
 aside nav a:hover{background:rgba(255,255,255,.08);color:#fff}
@@ -70,6 +70,7 @@ aside .logout:hover{color:#fff}
 .auth-shell{min-height:100vh;width:100%;display:flex;align-items:center;justify-content:center;background:linear-gradient(160deg,var(--ink) 0%,#04143A 100%)}
 .auth-card{width:100%;max-width:380px;background:#fff;border-radius:16px;padding:36px 34px;box-shadow:0 20px 50px rgba(1,33,105,.35)}
 .auth-card .brand{color:var(--ink);margin-bottom:22px;font-size:19px}
+.auth-card .brand img{width:52px;height:52px}
 .auth-card h1{font-size:17px;margin-bottom:2px}
 .auth-card .form{box-shadow:none;border:0;padding:0;max-width:none}
 .auth-card button{width:100%;justify-content:center;padding:11px}
@@ -131,10 +132,10 @@ if ($path === '/setup') {
 
 if ($path === '/login' && $method === 'POST') {
     if (!AuthService::verifyCsrf($_POST['csrf'] ?? null)) { http_response_code(419); render('Invalid request', '<h1>Invalid request</h1>', null); }
-    if (!$auth->attempt((string)($_POST['email'] ?? ''), (string)($_POST['password'] ?? ''))) render('Login', '<div class="brand"><span class="brand-mark"></span><span>BMT CRM</span></div><h1>Sign in</h1><p class="notice">Invalid email or password.</p><form class="form" method="post"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><label>Email<input type="email" name="email" required autofocus></label><label>Password<input type="password" name="password" required></label><button>Sign in</button></form>', null);
+    if (!$auth->attempt((string)($_POST['email'] ?? ''), (string)($_POST['password'] ?? ''))) render('Login', '<div class="brand"><img src="/assets/logo.png" alt="British Mobile Tyres"><span>BMT CRM</span></div><h1>Sign in</h1><p class="notice">Invalid email or password.</p><form class="form" method="post"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><label>Email<input type="email" name="email" required autofocus></label><label>Password<input type="password" name="password" required></label><button>Sign in</button></form>', null);
     redirect('/');
 }
-if ($path === '/login') render('Login', '<div class="brand"><span class="brand-mark"></span><span>BMT CRM</span></div><h1>Sign in</h1><p style="margin-bottom:22px">Private administration area.</p><form class="form" method="post"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><label>Email<input type="email" name="email" required autofocus></label><label>Password<input type="password" name="password" required></label><button>Sign in</button></form>', null);
+if ($path === '/login') render('Login', '<div class="brand"><img src="/assets/logo.png" alt="British Mobile Tyres"><span>BMT CRM</span></div><h1>Sign in</h1><p style="margin-bottom:22px">Private administration area.</p><form class="form" method="post"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><label>Email<input type="email" name="email" required autofocus></label><label>Password<input type="password" name="password" required></label><button>Sign in</button></form>', null);
 if ($path === '/logout') { $auth->logout(); redirect('/login'); }
 
 $user = $auth->user();
