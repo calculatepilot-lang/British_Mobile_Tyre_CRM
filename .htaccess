@@ -12,6 +12,7 @@ RewriteRule ^public(?:/|$) - [F,L,NC]
 # Serve the explicit public API endpoint.
 RewriteRule ^api/leads\.php$ public/api/leads.php [L]
 
-# Route CRM pages through the front controller while preserving REQUEST_URI.
-RewriteRule ^$ index.php [L]
+# Route CRM pages through the front controller while preserving REQUEST_URI,
+# but let real static files (e.g. /assets/logo.png) be served directly first.
+RewriteCond %{REQUEST_FILENAME} !-f
 RewriteRule ^ index.php [L]
