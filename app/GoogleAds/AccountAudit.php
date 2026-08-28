@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace BMT\GoogleAds;
 
-use Google\Ads\GoogleAds\V20\Services\SearchGoogleAdsRequest;
+use Google\Ads\GoogleAds\V25\Services\SearchGoogleAdsRequest;
 
 final class AccountAudit
 {
