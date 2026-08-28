@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 require dirname(__DIR__) . '/vendor/autoload.php';
 
+use BMT\Approvals\ApprovalService;
 use BMT\Auth\AuthService;
 use BMT\Database;
 use BMT\Leads\LeadRepository;
@@ -97,7 +98,28 @@ if ($path === '/leads') {
     $rows=''; foreach($leads->list(100) as $lead){$rows.='<tr><td><a href="/leads/'.rawurlencode($lead['public_id']).'">'.h($lead['public_id']).'</a></td><td>'.h($lead['status']).'</td><td>'.h($lead['lead_type']).'</td><td>'.h($lead['customer_name']?:'—').'</td><td>'.h($lead['city']?:'—').'</td><td>'.h($lead['campaign_name']?:'—').'</td><td>'.h($lead['created_at']).'</td></tr>';}
     render('Leads','<div class="toolbar"><h1>Leads</h1><a class="button" href="/leads/new">Add lead</a></div><table><thead><tr><th>ID</th><th>Status</th><th>Type</th><th>Customer</th><th>City</th><th>Campaign</th><th>Created</th></tr></thead><tbody>'.$rows.'</tbody></table>',$user);
 }
-if ($path === '/changes') render('Changes','<h1>Automation changes</h1><p>Google Ads mutation execution remains disabled until the account audit, OAuth setup and approval service are complete.</p>',$user);
+if (preg_match('#^/changes/([0-9a-f-]{36})/approve$#', $path, $m) && $method === 'POST') {
+    if (!AuthService::verifyCsrf($_POST['csrf'] ?? null)) { http_response_code(419); render('Invalid request', '<h1>Invalid request</h1>', $user); }
+    try { (new ApprovalService())->approve($m[1], (string) $user['email']); }
+    catch (\Throwable $e) { render('Changes', '<h1>Automation changes</h1><p class="notice">'.h($e->getMessage()).'</p><p><a href="/changes">Back to changes</a></p>', $user); }
+    redirect('/changes');
+}
+if (preg_match('#^/changes/([0-9a-f-]{36})/reject$#', $path, $m) && $method === 'POST') {
+    if (!AuthService::verifyCsrf($_POST['csrf'] ?? null)) { http_response_code(419); render('Invalid request', '<h1>Invalid request</h1>', $user); }
+    try { (new ApprovalService())->reject($m[1]); }
+    catch (\Throwable $e) { render('Changes', '<h1>Automation changes</h1><p class="notice">'.h($e->getMessage()).'</p><p><a href="/changes">Back to changes</a></p>', $user); }
+    redirect('/changes');
+}
+if ($path === '/changes') {
+    $rows=''; foreach((new ApprovalService())->list(100) as $c){
+        $actions = $c['status']==='pending_approval'
+            ? '<form method="post" action="/changes/'.h($c['change_uuid']).'/approve" style="display:inline"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><button>Approve</button></form> '
+              .'<form method="post" action="/changes/'.h($c['change_uuid']).'/reject" style="display:inline"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><button style="background:#b42318">Reject</button></form>'
+            : '—';
+        $rows.='<tr><td>'.h($c['change_type']).'</td><td>'.h($c['resource_name']?:'—').'</td><td>'.h($c['reason']).'</td><td>'.h($c['risk_level']).'</td><td><span class="status">'.h(str_replace('_',' ',$c['status'])).'</span></td><td>'.h($c['created_at']).'</td><td>'.$actions.'</td></tr>';
+    }
+    render('Changes','<h1>Automation changes</h1><p>Google Ads mutation execution remains disabled (automation mode: <strong>'.h(envValue('AUTOMATION_MODE','audit_only')).'</strong>). Approving a change here records the decision only — nothing is written to Google Ads until a reviewed executor is built.</p><table><thead><tr><th>Type</th><th>Resource</th><th>Reason</th><th>Risk</th><th>Status</th><th>Created</th><th>Action</th></tr></thead><tbody>'.($rows?:'<tr><td colspan="7">No automation changes yet.</td></tr>').'</tbody></table>',$user);
+}
 
 $data=$leads->dashboard(); $t=$data['today']; $cards='<div class="grid"><div class="card"><div>New leads today</div><div class="metric">'.h($t['total']??0).'</div></div><div class="card"><div>Qualified today</div><div class="metric">'.h($t['qualified']??0).'</div></div><div class="card"><div>Completed today</div><div class="metric">'.h($t['completed']??0).'</div></div><div class="card"><div>Completed revenue today</div><div class="metric">£'.h(number_format((float)($t['revenue']??0),2)).'</div></div></div>';
 $pipeline=''; foreach($data['pipeline'] as $p)$pipeline.='<tr><td>'.h(ucwords(str_replace('_',' ',$p['status']))).'</td><td>'.h($p['total']).'</td></tr>';

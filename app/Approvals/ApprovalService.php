@@ -9,6 +9,32 @@ use RuntimeException;
 
 final class ApprovalService
 {
+    public function list(int $limit = 50): array
+    {
+        $limit = max(1, min(200, $limit));
+        return Database::connection()
+            ->query('SELECT * FROM automation_changes ORDER BY created_at DESC LIMIT ' . $limit)
+            ->fetchAll();
+    }
+
+    /**
+     * True if a change for this resource is already awaiting action (not yet
+     * approved/rejected/executed). Callers that create proposals on a schedule
+     * (e.g. a daily audit) must check this first so re-running the audit never
+     * queues duplicate proposals for the same resource.
+     */
+    public function hasOpenProposal(string $resourceType, string $resourceName): bool
+    {
+        $stmt = Database::connection()->prepare(
+            "SELECT 1 FROM automation_changes
+             WHERE resource_type = :resource_type AND resource_name = :resource_name
+             AND status IN ('planned','pending_approval') LIMIT 1"
+        );
+        $stmt->execute(['resource_type' => $resourceType, 'resource_name' => $resourceName]);
+
+        return $stmt->fetchColumn() !== false;
+    }
+
     public function propose(array $change): string
     {
         foreach (['change_type', 'resource_type', 'reason'] as $required) {

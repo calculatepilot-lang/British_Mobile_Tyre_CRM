@@ -32,6 +32,11 @@ final class ConversionPlanService
                 continue;
             }
 
+            if (!empty($this->config['duplicate_check_required'])
+                && $this->approvals->hasOpenProposal('google_ads_conversion_action', $action['name'])) {
+                continue;
+            }
+
             $proposals[] = [
                 'type' => 'create_conversion_action',
                 'resource_name' => $action['name'],
@@ -42,6 +47,27 @@ final class ConversionPlanService
         }
 
         return $proposals;
+    }
+
+    /**
+     * Runs the missing-action check against a fresh Google Ads account audit
+     * and queues a proposal for each gap found (skipping ones already open).
+     * This is the entry point the daily audit cron calls; it never creates
+     * anything in Google Ads itself — only rows in automation_changes awaiting
+     * human approval, matching this CRM's audit_only safety posture.
+     *
+     * @return string[] change_uuids of newly queued proposals
+     */
+    public function auditAndQueueMissingActions(array $auditConversions): array
+    {
+        $existingNames = array_map(static fn(array $c): string => (string) $c['name'], $auditConversions);
+        $queued = [];
+
+        foreach ($this->buildMissingActionProposals($existingNames) as $proposal) {
+            $queued[] = $this->queueProposal($proposal);
+        }
+
+        return $queued;
     }
 
     /**
