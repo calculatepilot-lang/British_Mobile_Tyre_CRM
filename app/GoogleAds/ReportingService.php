@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace BMT\GoogleAds;
 
 use BMT\Database;
+use Google\Ads\GoogleAds\V20\Services\SearchGoogleAdsRequest;
 
 final class ReportingService
 {
@@ -13,7 +14,7 @@ final class ReportingService
         $client = Client::make();
         $customerId = Client::customerId();
         $service = $client->getGoogleAdsServiceClient();
-        $date = (new \DateTimeImmutable('yesterday', new \DateTimeZone(getenv('APP_TIMEZONE') ?: 'Europe/London')))->format('Y-m-d');
+        $date = (new \DateTimeImmutable('yesterday', new \DateTimeZone(($_ENV['APP_TIMEZONE'] ?? $_SERVER['APP_TIMEZONE'] ?? getenv('APP_TIMEZONE') ?: null) ?: 'Europe/London')))->format('Y-m-d');
 
         $query = "SELECT campaign.id, campaign.name, metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions, metrics.conversions_value FROM campaign WHERE segments.date = '{$date}' AND campaign.status != REMOVED";
 
@@ -26,7 +27,10 @@ final class ReportingService
                  cost_micros = VALUES(cost_micros), conversions = VALUES(conversions), conversion_value = VALUES(conversion_value)'
         );
 
-        foreach ($service->search($customerId, $query)->iterateAllElements() as $row) {
+        foreach ($service->search(new SearchGoogleAdsRequest([
+            'customer_id' => (string) $customerId,
+            'query' => $query,
+        ]))->iterateAllElements() as $row) {
             $campaign = $row->getCampaign();
             $metrics = $row->getMetrics();
             $record = [

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace BMT\GoogleAds;
 
+use Google\Ads\GoogleAds\V20\Services\SearchGoogleAdsRequest;
+
 final class AccountAudit
 {
     public function run(): array
@@ -12,7 +14,10 @@ final class AccountAudit
         $customerId = Client::customerId();
         $service = $client->getGoogleAdsServiceClient();
 
-        $customerRows = $service->search($customerId, 'SELECT customer.id, customer.descriptive_name, customer.currency_code, customer.time_zone, customer.conversion_tracking_setting.google_ads_conversion_customer, customer.conversion_tracking_setting.conversion_tracking_status, customer.conversion_tracking_setting.conversion_tracking_id FROM customer LIMIT 1');
+        $customerRows = $service->search(new SearchGoogleAdsRequest([
+            'customer_id' => (string) $customerId,
+            'query' => 'SELECT customer.id, customer.descriptive_name, customer.currency_code, customer.time_zone, customer.conversion_tracking_setting.google_ads_conversion_customer, customer.conversion_tracking_setting.conversion_tracking_status, customer.conversion_tracking_setting.conversion_tracking_id FROM customer LIMIT 1',
+        ]));
 
         $account = null;
         $conversionCustomerResource = null;
@@ -33,7 +38,11 @@ final class AccountAudit
 
         $campaigns = [];
         $query = 'SELECT campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type, campaign.bidding_strategy_type, campaign_budget.id, campaign_budget.amount_micros FROM campaign WHERE campaign.status != REMOVED ORDER BY campaign.name';
-        foreach ($service->search($customerId, $query)->iterateAllElements() as $row) {
+        $campaignRows = $service->search(new SearchGoogleAdsRequest([
+            'customer_id' => (string) $customerId,
+            'query' => $query,
+        ]));
+        foreach ($campaignRows->iterateAllElements() as $row) {
             $campaign = $row->getCampaign();
             $budget = $row->getCampaignBudget();
             $campaigns[] = [
@@ -53,7 +62,11 @@ final class AccountAudit
         }
 
         $conversions = [];
-        foreach ($service->search($conversionCustomerId, 'SELECT conversion_action.id, conversion_action.name, conversion_action.status, conversion_action.type, conversion_action.category, conversion_action.primary_for_goal, conversion_action.counting_type FROM conversion_action WHERE conversion_action.status != REMOVED ORDER BY conversion_action.name')->iterateAllElements() as $row) {
+        $conversionRows = $service->search(new SearchGoogleAdsRequest([
+            'customer_id' => (string) $conversionCustomerId,
+            'query' => 'SELECT conversion_action.id, conversion_action.name, conversion_action.status, conversion_action.type, conversion_action.category, conversion_action.primary_for_goal, conversion_action.counting_type FROM conversion_action WHERE conversion_action.status != REMOVED ORDER BY conversion_action.name',
+        ]));
+        foreach ($conversionRows->iterateAllElements() as $row) {
             $action = $row->getConversionAction();
             $conversions[] = [
                 'id' => (string) $action->getId(),
