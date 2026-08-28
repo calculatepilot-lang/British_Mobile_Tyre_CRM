@@ -9,8 +9,9 @@ RewriteRule ^(?:\.env(?:\..*)?|composer\.(?:json|lock)|README\.md|\.gitignore)$ 
 # repository root as the subdomain document root.
 RewriteRule ^public(?:/|$) - [F,L,NC]
 
-# Serve the explicit public API endpoint.
+# Serve the explicit public API endpoints.
 RewriteRule ^api/leads\.php$ public/api/leads.php [L]
+RewriteRule ^api/automation-events\.php$ public/api/automation-events.php [L]
 
 # Route CRM pages through the front controller while preserving REQUEST_URI,
 # but let real static files (e.g. /assets/logo.png) be served directly first.
