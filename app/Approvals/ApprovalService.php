@@ -35,6 +35,36 @@ final class ApprovalService
         return $stmt->fetchColumn() !== false;
     }
 
+    /** Approved changes waiting to be applied to Google Ads. */
+    public function pending(int $limit = 50): array
+    {
+        $limit = max(1, min(200, $limit));
+        return Database::connection()
+            ->query("SELECT * FROM automation_changes WHERE status = 'planned' ORDER BY created_at ASC LIMIT " . $limit)
+            ->fetchAll();
+    }
+
+    public function markExecuted(string $uuid, ?string $resourceId, array $beforeState): void
+    {
+        $stmt = Database::connection()->prepare(
+            "UPDATE automation_changes SET status = 'executed', resource_id = COALESCE(:resource_id, resource_id),
+             before_state = :before_state, executed_at = NOW() WHERE change_uuid = :uuid AND status = 'planned'"
+        );
+        $stmt->execute([
+            'resource_id' => $resourceId,
+            'before_state' => json_encode($beforeState, JSON_THROW_ON_ERROR),
+            'uuid' => $uuid,
+        ]);
+    }
+
+    public function markFailed(string $uuid, string $message): void
+    {
+        $stmt = Database::connection()->prepare(
+            "UPDATE automation_changes SET status = 'failed', review_note = :note WHERE change_uuid = :uuid AND status = 'planned'"
+        );
+        $stmt->execute(['note' => mb_substr($message, 0, 2000), 'uuid' => $uuid]);
+    }
+
     public function propose(array $change): string
     {
         foreach (['change_type', 'resource_type', 'reason'] as $required) {

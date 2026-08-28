@@ -80,6 +80,7 @@ CREATE TABLE IF NOT EXISTS automation_changes (
     risk_level ENUM('low','medium','high','critical') NOT NULL DEFAULT 'medium',
     status ENUM('planned','pending_approval','executed','rejected','rolled_back','failed') NOT NULL DEFAULT 'planned',
     reversible TINYINT(1) NOT NULL DEFAULT 1,
+    review_note TEXT NULL,
     approved_by VARCHAR(190) NULL,
     approved_at DATETIME NULL,
     executed_at DATETIME NULL,

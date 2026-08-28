@@ -4,6 +4,9 @@ ALTER TABLE leads
     ADD COLUMN IF NOT EXISTS vehicle_type ENUM('car','van','caravan','bus','truck','trailer') NULL AFTER service_requested,
     ADD INDEX IF NOT EXISTS idx_leads_vehicle_type (vehicle_type);
 
+ALTER TABLE automation_changes
+    ADD COLUMN IF NOT EXISTS review_note TEXT NULL AFTER reversible;
+
 -- NOTE: automation_decisions was removed here. It duplicated automation_changes
 -- (defined in schema.sql) with an incompatible column set. automation_changes,
 -- written via BMT\Approvals\ApprovalService, is the single canonical table for

@@ -170,15 +170,32 @@ if (preg_match('#^/changes/([0-9a-f-]{36})/reject$#', $path, $m) && $method === 
     catch (\Throwable $e) { render('Changes', '<h1>Automation changes</h1><p class="notice">'.h($e->getMessage()).'</p><p><a href="/changes">Back to changes</a></p>', $user); }
     redirect('/changes');
 }
+if ($path === '/changes/run-approved' && $method === 'POST') {
+    if (!AuthService::verifyCsrf($_POST['csrf'] ?? null)) { http_response_code(419); render('Invalid request', '<h1>Invalid request</h1>', $user); }
+    try {
+        $result = (new \BMT\Execution\ChangeExecutor())->runPending();
+        redirect('/changes?executed=' . count($result['executed']) . '&failed=' . count($result['failed']));
+    } catch (\Throwable $e) {
+        render('Changes', '<h1>Automation changes</h1><p class="notice">Run failed before any change could be processed: '.h($e->getMessage()).'</p><p><a href="/changes">Back to changes</a></p>', $user);
+    }
+}
 if ($path === '/changes') {
-    $rows=''; foreach((new ApprovalService())->list(100) as $c){
+    $rows=''; $approvedCount=0; foreach((new ApprovalService())->list(100) as $c){
+        if ($c['status']==='planned') $approvedCount++;
         $actions = $c['status']==='pending_approval'
             ? '<form method="post" action="/changes/'.h($c['change_uuid']).'/approve" style="display:inline"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><button>Approve</button></form> '
               .'<form method="post" action="/changes/'.h($c['change_uuid']).'/reject" style="display:inline"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><button style="background:#b42318">Reject</button></form>'
             : '—';
         $rows.='<tr><td>'.h($c['change_type']).'</td><td>'.h($c['resource_name']?:'—').'</td><td>'.h($c['reason']).'</td><td>'.h($c['risk_level']).'</td><td>'.statusBadge($c['status']).'</td><td>'.h($c['created_at']).'</td><td>'.$actions.'</td></tr>';
     }
-    render('Changes','<h1>Automation changes</h1><p>Google Ads mutation execution remains disabled (automation mode: <strong>'.h(envValue('AUTOMATION_MODE','audit_only')).'</strong>). Approving a change here records the decision only — nothing is written to Google Ads until a reviewed executor is built.</p><table><thead><tr><th>Type</th><th>Resource</th><th>Reason</th><th>Risk</th><th>Status</th><th>Created</th><th>Action</th></tr></thead><tbody>'.($rows?:'<tr><td colspan="7">No automation changes yet.</td></tr>').'</tbody></table>',$user);
+    $flash='';
+    if (isset($_GET['executed']) || isset($_GET['failed'])) {
+        $flash='<p class="notice">Run complete — '.(int)($_GET['executed']??0).' change(s) executed, '.(int)($_GET['failed']??0).' failed. Failed changes are marked below; check their reason or contact support before retrying.</p>';
+    }
+    $runButton = $approvedCount > 0
+        ? '<form method="post" action="/changes/run-approved" onsubmit="return confirm(\'This will apply '.(int)$approvedCount.' approved change(s) to your live Google Ads account. Continue?\')"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><button>Run '.(int)$approvedCount.' approved change(s)</button></form>'
+        : '';
+    render('Changes','<div class="toolbar"><div><h1>Automation changes</h1><p>Automation mode: <strong>'.h(envValue('AUTOMATION_MODE','audit_only')).'</strong>. Approving a change only marks it ready — nothing reaches Google Ads until you click below, so you control exactly when each batch of changes goes live.</p></div>'.$runButton.'</div>'.$flash.'<table><thead><tr><th>Type</th><th>Resource</th><th>Reason</th><th>Risk</th><th>Status</th><th>Created</th><th>Action</th></tr></thead><tbody>'.($rows?:'<tr><td colspan="7">No automation changes yet.</td></tr>').'</tbody></table>',$user);
 }
 
 $data=$leads->dashboard(); $t=$data['today']; $cards='<div class="grid"><div class="card"><div>New leads today</div><div class="metric">'.h($t['total']??0).'</div></div><div class="card"><div>Qualified today</div><div class="metric">'.h($t['qualified']??0).'</div></div><div class="card"><div>Completed today</div><div class="metric">'.h($t['completed']??0).'</div></div><div class="card"><div>Completed revenue today</div><div class="metric">£'.h(number_format((float)($t['revenue']??0),2)).'</div></div></div>';
