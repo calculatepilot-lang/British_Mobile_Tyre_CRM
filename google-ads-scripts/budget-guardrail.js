@@ -35,7 +35,18 @@
 
 // ---- Configuration ----
 
-var DEFAULT_DAILY_CAP_PKR = 5700; // ≈ £15 at ~380 PKR/GBP — review and adjust to your real target.
+// IMPORTANT: this is a PER-CAMPAIGN cap, checked against each campaign
+// individually — it is NOT the same number as MAX_DAILY_BUDGET in the CRM's
+// .env, which is your TOTAL budget split across all campaigns. Setting this
+// equal to the total would let any single campaign spend the whole day's
+// budget before the guardrail reacts.
+//
+// Once real campaigns exist, fill in DAILY_CAPS below with each campaign's
+// own configured daily budget (or slightly above it, to allow normal
+// day-to-day fluctuation without false-triggering). Until then, this
+// conservative default protects against any campaign spending wildly out
+// of line while campaigns are still being set up.
+var DEFAULT_DAILY_CAP_PKR = 1000;
 
 // Optional per-campaign overrides. Campaign name must match exactly.
 var DAILY_CAPS = {
