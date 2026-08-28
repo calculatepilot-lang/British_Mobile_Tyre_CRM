@@ -4,7 +4,7 @@
   "type": "project",
   "require": {
     "php": "^8.2",
-    "googleads/google-ads-php": "^34.0",
+    "googleads/google-ads-php": "33.6.0",
     "vlucas/phpdotenv": "^5.6"
   },
   "autoload": {
@@ -15,6 +15,7 @@
   },
   "scripts": {
     "daily-audit": "php cron/daily_audit.php",
+    "execute-approved": "php cron/execute_approved_changes.php",
     "budget-guard": "php cron/budget_guard.php",
     "monitoring": "php cron/monitoring.php",
     "daily-report": "php cron/send_daily_report.php"
