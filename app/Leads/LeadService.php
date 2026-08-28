@@ -13,21 +13,29 @@ final class LeadService
 {
     private const ALLOWED_TYPES = ['phone', 'whatsapp', 'form', 'purchase', 'other'];
 
+    /** Minutes within which a matching phone or email is treated as a duplicate submission. */
+    private const DUPLICATE_WINDOW_MINUTES = 30;
+
     public function create(array $lead, array $attribution = []): string
     {
         $type = $lead['lead_type'] ?? '';
         if (!in_array($type, self::ALLOWED_TYPES, true)) {
+            $this->logError('lead_intake', 'Invalid lead type.', $lead);
             throw new RuntimeException('Invalid lead type.');
         }
 
-        $publicId = $this->newPublicId();
         $pdo = Database::connection();
+
+        $duplicateOf = $this->findRecentDuplicate($pdo, $lead);
+
+        $publicId = $this->newPublicId();
         $pdo->beginTransaction();
 
         try {
-            $stmt = $pdo->prepare('INSERT INTO leads (public_id, lead_type, source, customer_name, customer_phone, customer_email, service_requested, city, postcode) VALUES (:public_id, :lead_type, :source, :customer_name, :customer_phone, :customer_email, :service_requested, :city, :postcode)');
+            $stmt = $pdo->prepare('INSERT INTO leads (public_id, status, lead_type, source, customer_name, customer_phone, customer_email, service_requested, city, postcode, language) VALUES (:public_id, :status, :lead_type, :source, :customer_name, :customer_phone, :customer_email, :service_requested, :city, :postcode, :language)');
             $stmt->execute([
                 'public_id' => $publicId,
+                'status' => $duplicateOf !== null ? 'duplicate' : 'new',
                 'lead_type' => $type,
                 'source' => $lead['source'] ?? 'direct',
                 'customer_name' => $lead['customer_name'] ?? null,
@@ -36,6 +44,7 @@ final class LeadService
                 'service_requested' => $lead['service_requested'] ?? null,
                 'city' => $lead['city'] ?? null,
                 'postcode' => $lead['postcode'] ?? null,
+                'language' => $this->normaliseLanguage($lead['language'] ?? null),
             ]);
 
             $leadId = (int) $pdo->lastInsertId();
@@ -57,11 +66,85 @@ final class LeadService
                 'utm_campaign' => $attribution['utm_campaign'] ?? null,
             ]);
 
+            if ($duplicateOf !== null) {
+                $event = $pdo->prepare('INSERT INTO lead_events (lead_id, event_type, event_data) VALUES (:lead_id, :event_type, :event_data)');
+                $event->execute([
+                    'lead_id' => $leadId,
+                    'event_type' => 'duplicate_detected',
+                    'event_data' => json_encode(['matched_lead_public_id' => $duplicateOf], JSON_THROW_ON_ERROR),
+                ]);
+            }
+
             $pdo->commit();
             return $publicId;
         } catch (\Throwable $e) {
             $pdo->rollBack();
+            $this->logError('lead_intake', $e->getMessage(), $lead);
             throw $e;
+        }
+    }
+
+    /**
+     * Looks for a lead with the same phone or email created within the
+     * duplicate window. Returns that lead's public_id, or null if none found.
+     * Matching is skipped for a field that's blank on the incoming lead.
+     */
+    private function findRecentDuplicate(PDO $pdo, array $lead): ?string
+    {
+        $phone = trim((string) ($lead['customer_phone'] ?? ''));
+        $email = trim((string) ($lead['customer_email'] ?? ''));
+
+        if ($phone === '' && $email === '') {
+            return null;
+        }
+
+        $conditions = [];
+        $params = ['minutes' => self::DUPLICATE_WINDOW_MINUTES];
+
+        if ($phone !== '') {
+            $conditions[] = 'customer_phone = :phone';
+            $params['phone'] = $phone;
+        }
+        if ($email !== '') {
+            $conditions[] = 'customer_email = :email';
+            $params['email'] = $email;
+        }
+
+        $sql = 'SELECT public_id FROM leads
+                WHERE (' . implode(' OR ', $conditions) . ')
+                AND created_at >= (NOW() - INTERVAL :minutes MINUTE)
+                ORDER BY created_at DESC LIMIT 1';
+
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($params);
+        $result = $stmt->fetchColumn();
+
+        return $result !== false ? (string) $result : null;
+    }
+
+    private function normaliseLanguage(mixed $language): string
+    {
+        $lang = strtolower(trim((string) ($language ?? '')));
+        $lang = str_replace('_', '-', $lang);
+        if ($lang === '' || !preg_match('/^[a-z]{2}(-[a-z]{2})?$/', $lang)) {
+            return 'en';
+        }
+        return $lang;
+    }
+
+    private function logError(string $context, string $message, array $payload = []): void
+    {
+        try {
+            $stmt = Database::connection()->prepare(
+                'INSERT INTO error_logs (context, message, payload) VALUES (:context, :message, :payload)'
+            );
+            $stmt->execute([
+                'context' => $context,
+                'message' => $message,
+                'payload' => json_encode($payload, JSON_PARTIAL_OUTPUT_ON_ERROR),
+            ]);
+        } catch (\Throwable) {
+            // Logging must never mask or replace the original exception.
         }
     }
 

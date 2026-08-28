@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS leads (
     service_requested VARCHAR(190) NULL,
     city VARCHAR(120) NULL,
     postcode VARCHAR(20) NULL,
+    language VARCHAR(10) NULL DEFAULT 'en',
     quoted_amount DECIMAL(12,2) NULL,
     final_revenue DECIMAL(12,2) NULL,
     outcome_reason VARCHAR(255) NULL,
@@ -29,7 +30,9 @@ CREATE TABLE IF NOT EXISTS leads (
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_leads_status_created (status, created_at),
     INDEX idx_leads_city (city),
-    INDEX idx_leads_source_created (source, created_at)
+    INDEX idx_leads_source_created (source, created_at),
+    INDEX idx_leads_phone_created (customer_phone, created_at),
+    INDEX idx_leads_email_created (customer_email, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS lead_attribution (
@@ -98,4 +101,13 @@ CREATE TABLE IF NOT EXISTS daily_metrics (
     conversion_value DECIMAL(14,4) NOT NULL DEFAULT 0,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uniq_metric_scope (metric_date, scope_type, scope_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS error_logs (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    context VARCHAR(100) NOT NULL,
+    message TEXT NOT NULL,
+    payload JSON NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_error_logs_context_created (context, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
