@@ -2,17 +2,20 @@
 
 declare(strict_types=1);
 
-namespace App\Conversions;
+namespace BMT\Conversions;
 
-use App\Database;
+use BMT\Approvals\ApprovalService;
+use BMT\Database;
 
 final class ConversionPlanService
 {
     private array $config;
+    private ApprovalService $approvals;
 
-    public function __construct(private Database $database, ?array $config = null)
+    public function __construct(private Database $database, ?array $config = null, ?ApprovalService $approvals = null)
     {
         $this->config = $config ?? require dirname(__DIR__, 2) . '/config/conversions.php';
+        $this->approvals = $approvals ?? new ApprovalService();
     }
 
     /**
@@ -41,21 +44,20 @@ final class ConversionPlanService
         return $proposals;
     }
 
-    public function queueProposal(array $proposal): int
+    /**
+     * Queues a conversion-action proposal for human approval via the shared
+     * automation_changes table. Returns the change_uuid identifying the record.
+     */
+    public function queueProposal(array $proposal): string
     {
-        $stmt = $this->database->pdo()->prepare(
-            'INSERT INTO automation_decisions
-             (decision_type, resource_name, status, reversible, proposed_state, created_at)
-             VALUES (:type, :resource_name, :status, :reversible, :proposed_state, NOW())'
-        );
-        $stmt->execute([
-            'type' => $proposal['type'],
+        return $this->approvals->propose([
+            'change_type' => $proposal['type'],
+            'resource_type' => 'google_ads_conversion_action',
             'resource_name' => $proposal['resource_name'],
-            'status' => $proposal['status'],
-            'reversible' => (int) $proposal['reversible'],
-            'proposed_state' => json_encode($proposal['payload'], JSON_THROW_ON_ERROR),
+            'reason' => $proposal['reason'] ?? 'New conversion action proposed from CRM config.',
+            'after_state' => $proposal['payload'],
+            'risk_level' => $proposal['risk_level'] ?? 'medium',
+            'reversible' => $proposal['reversible'] ?? true,
         ]);
-
-        return (int) $this->database->pdo()->lastInsertId();
     }
 }
