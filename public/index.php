@@ -44,9 +44,13 @@ function statusBadge(string $status): string {
     return '<span class="status" style="background:' . $bg . ';color:' . $fg . '">' . $label . '</span>';
 }
 function render(string $title, string $body, ?array $user): never {
+    $currentPath = $GLOBALS['path'] ?? '';
     $navItems = [['/', 'Dashboard'], ['/leads', 'Leads'], ['/leads/new', 'Add lead'], ['/changes', 'Changes']];
     $navLinks = '';
-    foreach ($navItems as [$href, $label]) $navLinks .= '<a href="' . h($href) . '">' . h($label) . '</a>';
+    foreach ($navItems as [$href, $label]) {
+        $isActive = $href === '/' ? $currentPath === '/' : str_starts_with($currentPath, $href);
+        $navLinks .= '<a href="' . h($href) . '"' . ($isActive ? ' class="active"' : '') . '>' . h($label) . '</a>';
+    }
     $nav = $user ? '<aside><div class="brand"><span class="brand-mark"></span><span>BMT CRM</span></div><nav>' . $navLinks . '</nav><a class="logout" href="/logout">Logout</a></aside>' : '';
     echo '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' . h($title) . ' | BMT CRM</title><style>
 :root{--ink:#012169;--ink-soft:#0B2A6B;--brand:#C8102E;--brand-hover:#A50D25;--bg:#F4F6FA;--surface:#fff;--border:#E3E7EE;--text:#1A2130;--muted:#667085;--radius:12px;--shadow:0 1px 3px rgba(16,24,40,.06),0 1px 2px rgba(16,24,40,.04)}
@@ -59,9 +63,16 @@ aside{width:232px;flex:0 0 232px;background:var(--ink);color:#fff;padding:22px 1
 aside nav{display:flex;flex-direction:column;gap:2px}
 aside nav a{display:block;color:#C7D3EA;text-decoration:none;padding:10px 10px;border-radius:8px;font-size:14px;font-weight:600;transition:background-color .12s,color .12s}
 aside nav a:hover{background:rgba(255,255,255,.08);color:#fff}
+aside nav a.active{background:rgba(255,255,255,.14);color:#fff}
 aside .logout{margin-top:auto;color:#8A9BC0;text-decoration:none;font-size:13px;padding:8px 10px}
 aside .logout:hover{color:#fff}
 .content{flex:1;padding:32px 36px;max-width:1180px;width:100%}
+.auth-shell{min-height:100vh;width:100%;display:flex;align-items:center;justify-content:center;background:linear-gradient(160deg,var(--ink) 0%,#04143A 100%)}
+.auth-card{width:100%;max-width:380px;background:#fff;border-radius:16px;padding:36px 34px;box-shadow:0 20px 50px rgba(1,33,105,.35)}
+.auth-card .brand{color:var(--ink);margin-bottom:22px;font-size:19px}
+.auth-card h1{font-size:17px;margin-bottom:2px}
+.auth-card .form{box-shadow:none;border:0;padding:0;max-width:none}
+.auth-card button{width:100%;justify-content:center;padding:11px}
 h1{margin:0 0 4px;font-size:22px;font-weight:800;letter-spacing:-.015em;color:var(--ink)}
 h2{font-size:16px;font-weight:750;color:var(--ink);margin:28px 0 12px}
 h3{font-size:14px;font-weight:700;color:var(--ink)}
@@ -91,7 +102,10 @@ label{font-size:13px;font-weight:650;color:var(--text)}
 .notice{padding:12px 14px;border-radius:9px;background:#FFF4E0;color:#7A5200;border:1px solid #F5DEA6;margin-bottom:18px;font-size:13.5px;font-weight:600}
 .status{display:inline-flex;padding:3px 10px;border-radius:999px;font-size:11.5px;font-weight:700;letter-spacing:.01em}
 @media(max-width:760px){aside{width:auto;flex:none;padding:14px}.layout{display:block}.content{padding:18px}aside nav{flex-direction:row;flex-wrap:wrap}}
-</style></head><body><div class="layout">' . $nav . '<main class="content">' . $body . '</main></div></body></html>'; exit;
+</style></head><body>' . ($user
+        ? '<div class="layout">' . $nav . '<main class="content">' . $body . '</main></div>'
+        : '<div class="auth-shell"><div class="auth-card">' . $body . '</div></div>'
+    ) . '</body></html>'; exit;
 }
 
 if ($path === '/setup' && $method === 'POST') {
@@ -117,10 +131,10 @@ if ($path === '/setup') {
 
 if ($path === '/login' && $method === 'POST') {
     if (!AuthService::verifyCsrf($_POST['csrf'] ?? null)) { http_response_code(419); render('Invalid request', '<h1>Invalid request</h1>', null); }
-    if (!$auth->attempt((string)($_POST['email'] ?? ''), (string)($_POST['password'] ?? ''))) render('Login', '<h1>Login</h1><p class="notice">Invalid email or password.</p><form class="form" method="post"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><label>Email<input type="email" name="email" required></label><label>Password<input type="password" name="password" required></label><button>Sign in</button></form>', null);
+    if (!$auth->attempt((string)($_POST['email'] ?? ''), (string)($_POST['password'] ?? ''))) render('Login', '<div class="brand"><span class="brand-mark"></span><span>BMT CRM</span></div><h1>Sign in</h1><p class="notice">Invalid email or password.</p><form class="form" method="post"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><label>Email<input type="email" name="email" required autofocus></label><label>Password<input type="password" name="password" required></label><button>Sign in</button></form>', null);
     redirect('/');
 }
-if ($path === '/login') render('Login', '<h1>British Mobile Tyres CRM</h1><p>Private administration area.</p><form class="form" method="post"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><label>Email<input type="email" name="email" required></label><label>Password<input type="password" name="password" required></label><button>Sign in</button></form>', null);
+if ($path === '/login') render('Login', '<div class="brand"><span class="brand-mark"></span><span>BMT CRM</span></div><h1>Sign in</h1><p style="margin-bottom:22px">Private administration area.</p><form class="form" method="post"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><label>Email<input type="email" name="email" required autofocus></label><label>Password<input type="password" name="password" required></label><button>Sign in</button></form>', null);
 if ($path === '/logout') { $auth->logout(); redirect('/login'); }
 
 $user = $auth->user();
@@ -156,7 +170,7 @@ if (preg_match('#^/leads/([^/]+)$#', $path, $m)) {
 }
 if ($path === '/leads') {
     $rows=''; foreach($leads->list(100) as $lead){$rows.='<tr><td><a href="/leads/'.rawurlencode($lead['public_id']).'">'.h($lead['public_id']).'</a></td><td>'.statusBadge($lead['status']).'</td><td>'.h($lead['lead_type']).'</td><td>'.h($lead['customer_name']?:'—').'</td><td>'.h($lead['city']?:'—').'</td><td>'.h($lead['campaign_name']?:'—').'</td><td>'.h($lead['created_at']).'</td></tr>';}
-    render('Leads','<div class="toolbar"><h1>Leads</h1><a class="button" href="/leads/new">Add lead</a></div><table><thead><tr><th>ID</th><th>Status</th><th>Type</th><th>Customer</th><th>City</th><th>Campaign</th><th>Created</th></tr></thead><tbody>'.$rows.'</tbody></table>',$user);
+    render('Leads','<div class="toolbar"><h1>Leads</h1><a class="button" href="/leads/new">Add lead</a></div><table><thead><tr><th>ID</th><th>Status</th><th>Type</th><th>Customer</th><th>City</th><th>Campaign</th><th>Created</th></tr></thead><tbody>'.($rows?:'<tr><td colspan="7">No leads yet.</td></tr>').'</tbody></table>',$user);
 }
 if (preg_match('#^/changes/([0-9a-f-]{36})/approve$#', $path, $m) && $method === 'POST') {
     if (!AuthService::verifyCsrf($_POST['csrf'] ?? null)) { http_response_code(419); render('Invalid request', '<h1>Invalid request</h1>', $user); }
