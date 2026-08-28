@@ -69,8 +69,9 @@ aside .logout:hover{color:#fff}
 .content{flex:1;padding:32px 36px;max-width:1180px;width:100%}
 .auth-shell{min-height:100vh;width:100%;display:flex;align-items:center;justify-content:center;background:linear-gradient(160deg,var(--ink) 0%,#04143A 100%)}
 .auth-card{width:100%;max-width:380px;background:#fff;border-radius:16px;padding:36px 34px;box-shadow:0 20px 50px rgba(1,33,105,.35)}
-.auth-card .brand{color:var(--ink);margin-bottom:22px;font-size:19px}
-.auth-card .brand img{width:52px;height:52px}
+.auth-card .brand{color:var(--ink);margin-bottom:22px;font-size:19px;justify-content:center}
+.auth-card .brand img{width:88px;height:88px}
+.auth-card .brand span{display:none}
 .auth-card h1{font-size:17px;margin-bottom:2px}
 .auth-card .form{box-shadow:none;border:0;padding:0;max-width:none}
 .auth-card button{width:100%;justify-content:center;padding:11px}
