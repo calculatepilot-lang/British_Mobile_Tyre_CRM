@@ -46,7 +46,7 @@ var NOTIFICATION_EMAIL = 'calculatepilot@gmail.com';
 // Optional: also log the pause to the CRM so it appears on /changes.
 // Leave CRM_LOG_ENDPOINT blank to skip this and rely on email only.
 var CRM_LOG_ENDPOINT = 'https://ads.britishmobiletyres.co.uk/api/automation-events.php';
-var CRM_LOG_KEY = ''; // Same value as LEAD_API_KEY in the CRM's .env, if this endpoint is enabled.
+var CRM_LOG_KEY = '457f1ba532d9415b67b3751f7ff37631cee93aab82aee0ebf7540dd992c98df5'; // Matches LEAD_API_KEY in the CRM's .env.
 
 // ---- Script body ----
 
