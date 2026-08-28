@@ -9,6 +9,8 @@ use BMT\Auth\AuthService;
 use BMT\Database;
 use BMT\Leads\LeadRepository;
 use BMT\Leads\LeadService;
+use BMT\Optimisation\LeadQualityReport;
+use BMT\Optimisation\OptimiserService;
 
 $root = dirname(__DIR__);
 if (is_file($root . '/.env')) {
@@ -39,13 +41,14 @@ function statusBadge(string $status): string {
         'duplicate' => ['#F1F0F5', '#5B5876'], 'existing_customer' => ['#F1F0F5', '#5B5876'],
         'pending_approval' => ['#FFF4E0', '#966400'], 'planned' => ['#EAF1FF', '#0B4FCF'], 'approved' => ['#E8F7EE', '#0F7A3D'],
         'executed' => ['#E8F7EE', '#0F7A3D'],
+        'low' => ['#E8F7EE', '#0F7A3D'], 'medium' => ['#FFF4E0', '#966400'], 'high' => ['#FBEAEA', '#B42318'], 'critical' => ['#FBEAEA', '#B42318'],
     ];
     [$bg, $fg] = $palette[$status] ?? ['#EDF0F4', '#3D4550'];
     return '<span class="status" style="background:' . $bg . ';color:' . $fg . '">' . $label . '</span>';
 }
 function render(string $title, string $body, ?array $user): never {
     $currentPath = $GLOBALS['path'] ?? '';
-    $navItems = [['/', 'Dashboard'], ['/leads', 'Leads'], ['/leads/new', 'Add lead'], ['/changes', 'Changes']];
+    $navItems = [['/', 'Dashboard'], ['/leads', 'Leads'], ['/leads/new', 'Add lead'], ['/insights', 'Insights'], ['/changes', 'Changes']];
     $navLinks = '';
     foreach ($navItems as [$href, $label]) {
         $isActive = $href === '/' ? $currentPath === '/' : str_starts_with($currentPath, $href);
@@ -203,6 +206,39 @@ if ($path === '/changes/run-approved' && $method === 'POST') {
     } catch (\Throwable $e) {
         render('Changes', '<h1>Automation changes</h1><p class="notice">Run failed before any change could be processed: '.h($e->getMessage()).'</p><p><a href="/changes">Back to changes</a></p>', $user);
     }
+}
+if ($path === '/insights') {
+    $qualityTable = static function (array $rows): string {
+        if (!$rows) return '<p style="color:var(--muted)">No data yet.</p>';
+        $out = '<table><thead><tr><th></th><th>Leads</th><th>Qualified</th><th>Completed</th><th>Revenue</th></tr></thead><tbody>';
+        foreach ($rows as $r) {
+            $out .= '<tr><td>'.h($r['dimension']?:'—').'</td><td>'.h($r['leads']).'</td><td>'.h($r['qualified_leads']).'</td><td>'.h($r['completed_leads']).'</td><td>£'.h(number_format((float)$r['revenue'],2)).'</td></tr>';
+        }
+        return $out.'</tbody></table>';
+    };
+
+    $lqr = new LeadQualityReport(new Database());
+    $byCity = $qualityTable($lqr->byCity());
+    $byVehicle = $qualityTable($lqr->byVehicleType());
+    $byCampaign = $qualityTable($lqr->byCampaign());
+
+    $yesterday = (new DateTimeImmutable('yesterday', new DateTimeZone(envValue('APP_TIMEZONE','Europe/London'))))->format('Y-m-d');
+    $recommendations = [];
+    try { $recommendations = (new OptimiserService(new Database()))->recommendations($yesterday); } catch (\Throwable) { /* no metrics collected yet — shown as empty state below */ }
+
+    $recRows = '';
+    foreach ($recommendations as $r) {
+        $recRows .= '<tr><td>'.statusBadge($r['risk']).'</td><td>'.h($r['campaign']).'</td><td>'.h(ucwords(str_replace('_',' ',$r['action']))).'</td><td>'.h($r['reason']).'</td></tr>';
+    }
+    $recTable = $recommendations
+        ? '<table><thead><tr><th>Risk</th><th>Campaign</th><th>Suggested action</th><th>Reason</th></tr></thead><tbody>'.$recRows.'</tbody></table>'
+        : '<p style="color:var(--muted)">No campaign performance data for '.h($yesterday).' yet'.(envValue('GOOGLE_ADS_DEVELOPER_TOKEN')?'':' — this fills in automatically once the daily audit runs successfully').'.</p>';
+
+    render('Insights', '<h1>Insights</h1><p>Lead quality below reflects every lead in the CRM regardless of Google Ads status. Campaign recommendations need at least one successful daily audit to have data to analyse.</p>'
+        .'<h2>Campaign recommendations — '.h($yesterday).'</h2>'.$recTable
+        .'<h2>Lead quality by city</h2>'.$byCity
+        .'<h2>Lead quality by vehicle type</h2>'.$byVehicle
+        .'<h2>Lead quality by campaign</h2>'.$byCampaign, $user);
 }
 if ($path === '/changes') {
     $rows=''; $approvedCount=0; foreach((new ApprovalService())->list(100) as $c){
