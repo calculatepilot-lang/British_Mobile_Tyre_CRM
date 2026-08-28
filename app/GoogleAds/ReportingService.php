@@ -14,16 +14,16 @@ final class ReportingService
         $client = Client::make();
         $customerId = Client::customerId();
         $service = $client->getGoogleAdsServiceClient();
-        $date = (new \DateTimeImmutable('yesterday', new \DateTimeZone(($_ENV['APP_TIMEZONE'] ?? $_SERVER['APP_TIMEZONE'] ?? getenv('APP_TIMEZONE') ?: null) ?: 'Europe/London')))->format('Y-m-d');
-
-        $query = "SELECT campaign.id, campaign.name, metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions, metrics.conversions_value FROM campaign WHERE segments.date = '{$date}' AND campaign.status != REMOVED";
+        $timezone = ($_ENV['APP_TIMEZONE'] ?? $_SERVER['APP_TIMEZONE'] ?? getenv('APP_TIMEZONE') ?: 'Europe/London');
+        $date = (new \DateTimeImmutable('yesterday', new \DateTimeZone($timezone)))->format('Y-m-d');
+        $query = "SELECT campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type, campaign_budget.amount_micros, metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions, metrics.conversions_value FROM campaign WHERE segments.date = '{$date}' AND campaign.status != REMOVED";
 
         $rows = [];
         $db = Database::connection();
         $upsert = $db->prepare(
-            'INSERT INTO daily_campaign_metrics (metric_date, campaign_id, campaign_name, impressions, clicks, cost_micros, conversions, conversion_value)
-             VALUES (:metric_date, :campaign_id, :campaign_name, :impressions, :clicks, :cost_micros, :conversions, :conversion_value)
-             ON DUPLICATE KEY UPDATE campaign_id = VALUES(campaign_id), impressions = VALUES(impressions), clicks = VALUES(clicks),
+            'INSERT INTO daily_metrics (metric_date, scope_type, scope_id, scope_name, impressions, clicks, cost_micros, conversions, conversion_value)
+             VALUES (:metric_date, "campaign", :scope_id, :scope_name, :impressions, :clicks, :cost_micros, :conversions, :conversion_value)
+             ON DUPLICATE KEY UPDATE scope_name = VALUES(scope_name), impressions = VALUES(impressions), clicks = VALUES(clicks),
                  cost_micros = VALUES(cost_micros), conversions = VALUES(conversions), conversion_value = VALUES(conversion_value)'
         );
 
@@ -35,15 +35,17 @@ final class ReportingService
             $metrics = $row->getMetrics();
             $record = [
                 'metric_date' => $date,
-                'campaign_id' => (string) $campaign->getId(),
-                'campaign_name' => $campaign->getName(),
+                'scope_id' => (string) $campaign->getId(),
+                'scope_name' => $campaign->getName(),
                 'impressions' => (int) $metrics->getImpressions(),
                 'clicks' => (int) $metrics->getClicks(),
                 'cost_micros' => (string) $metrics->getCostMicros(),
-                'conversions' => (string) $metrics->getConversions(),
-                'conversion_value' => (string) $metrics->getConversionsValue(),
+                'conversions' => (float) $metrics->getConversions(),
+                'conversion_value' => (float) $metrics->getConversionsValue(),
             ];
             $upsert->execute($record);
+            $record['campaign_id'] = $record['scope_id'];
+            $record['campaign_name'] = $record['scope_name'];
             $rows[] = $record;
         }
 

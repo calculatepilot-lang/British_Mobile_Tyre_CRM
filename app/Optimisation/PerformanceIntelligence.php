@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace BMT\Optimisation;
@@ -12,15 +13,26 @@ final class PerformanceIntelligence
 
     public function campaignEfficiency(string $date): array
     {
-        $sql = "SELECT campaign_name, SUM(cost_micros)/1000000 AS cost, SUM(clicks) AS clicks, SUM(conversions) AS conversions
-                FROM daily_campaign_metrics WHERE metric_date = :date GROUP BY campaign_name";
+        $sql = "SELECT scope_id AS campaign_id, scope_name AS campaign_name,
+                       SUM(cost_micros)/1000000 AS cost, SUM(clicks) AS clicks,
+                       SUM(impressions) AS impressions, SUM(conversions) AS conversions,
+                       SUM(conversion_value) AS conversion_value
+                FROM daily_metrics
+                WHERE metric_date = :date AND scope_type = 'campaign'
+                GROUP BY scope_id, scope_name";
         $stmt = $this->database->pdo()->prepare($sql);
         $stmt->execute(['date' => $date]);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
         foreach ($rows as &$r) {
-            $r['cost'] = (float)$r['cost'];
-            $r['cpa'] = ((float)$r['conversions'] > 0) ? round($r['cost'] / (float)$r['conversions'], 2) : null;
+            $r['cost'] = (float) $r['cost'];
+            $r['clicks'] = (int) $r['clicks'];
+            $r['impressions'] = (int) $r['impressions'];
+            $r['conversions'] = (float) $r['conversions'];
+            $r['conversion_value'] = (float) $r['conversion_value'];
+            $r['cpa'] = $r['conversions'] > 0 ? round($r['cost'] / $r['conversions'], 2) : null;
+            $r['ctr'] = $r['impressions'] > 0 ? round(($r['clicks'] / $r['impressions']) * 100, 2) : null;
         }
+        unset($r);
         return $rows;
     }
 
