@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 require dirname(__DIR__) . '/vendor/autoload.php';
 
-use App\Database;
-use App\Notifications\WhatsAppClient;
-use App\Optimisation\OptimiserService;
-use App\Reports\DailyCampaignReport;
+use BMT\Database;
+use BMT\Notifications\WhatsAppClient;
+use BMT\Optimisation\OptimiserService;
+use BMT\Reports\DailyCampaignReport;
 
 $config = require dirname(__DIR__) . '/config/notifications.php';
 if (empty($config['daily_report']['enabled']) || getenv('WHATSAPP_ENABLED') !== 'true') {
@@ -15,7 +15,7 @@ if (empty($config['daily_report']['enabled']) || getenv('WHATSAPP_ENABLED') !== 
 }
 
 $date = (new DateTimeImmutable('yesterday', new DateTimeZone($config['daily_report']['schedule_timezone'])))->format('Y-m-d');
-$db = Database::fromEnvironment();
+$db = new Database();
 $report = (new DailyCampaignReport($db))->build($date);
 $recommendations = (new OptimiserService($db))->recommendations($date);
 

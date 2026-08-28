@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace App\Dashboard;
+namespace BMT\Dashboard;
 
-use App\Database;
+use BMT\Database;
 use PDO;
 
 final class DashboardService
@@ -15,13 +15,13 @@ final class DashboardService
     {
         $pdo = $this->database->pdo();
         $lead = $pdo->query("SELECT COUNT(*) leads, SUM(status IN ('qualified','quoted','booked','completed')) qualified, SUM(status='booked') booked, SUM(status='completed') completed, COALESCE(SUM(final_revenue),0) revenue FROM leads")->fetch(PDO::FETCH_ASSOC) ?: [];
-        $pending = (int) $pdo->query("SELECT COUNT(*) FROM automation_decisions WHERE status='pending_approval'")->fetchColumn();
+        $pending = (int) $pdo->query("SELECT COUNT(*) FROM automation_changes WHERE status='pending_approval'")->fetchColumn();
         return array_merge($lead, ['pending_approvals' => $pending]);
     }
 
     public function recentChanges(int $limit = 20): array
     {
         $limit = max(1, min($limit, 100));
-        return $this->database->pdo()->query("SELECT * FROM automation_decisions ORDER BY created_at DESC LIMIT {$limit}")->fetchAll(PDO::FETCH_ASSOC);
+        return $this->database->pdo()->query("SELECT * FROM automation_changes ORDER BY created_at DESC LIMIT {$limit}")->fetchAll(PDO::FETCH_ASSOC);
     }
 }

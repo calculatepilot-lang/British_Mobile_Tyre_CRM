@@ -1,9 +1,9 @@
 <?php
 declare(strict_types=1);
 
-namespace App\Finance;
+namespace BMT\Finance;
 
-use App\Database;
+use BMT\Database;
 use DateTimeImmutable;
 use DateTimeZone;
 use PDO;

@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace App\Reports;
+namespace BMT\Reports;
 
-use App\Database;
+use BMT\Database;
 
 final class DailyCampaignReport
 {

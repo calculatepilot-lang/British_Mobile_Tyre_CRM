@@ -60,4 +60,13 @@ final class Database
 
         return self::$connection;
     }
+
+    /**
+     * Instance-style accessor for modules that receive a Database instance
+     * via constructor injection rather than calling the static method directly.
+     */
+    public function pdo(): PDO
+    {
+        return self::connection();
+    }
 }

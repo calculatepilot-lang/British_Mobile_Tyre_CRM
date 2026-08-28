@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Campaigns;
+namespace BMT\Campaigns;
 
 final class CampaignPlanner
 {

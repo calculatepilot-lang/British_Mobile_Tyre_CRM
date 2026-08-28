@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace App\Optimisation;
+namespace BMT\Optimisation;
 
-use App\Database;
+use BMT\Database;
 use PDO;
 
 final class LeadQualityReport
