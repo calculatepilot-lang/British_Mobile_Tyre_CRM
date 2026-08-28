@@ -12,16 +12,16 @@ if (is_file($root . '/.env')) {
     Dotenv\Dotenv::createImmutable($root)->safeLoad();
 }
 
-date_default_timezone_set(getenv('APP_TIMEZONE') ?: 'Europe/London');
+date_default_timezone_set(($_ENV['APP_TIMEZONE'] ?? $_SERVER['APP_TIMEZONE'] ?? getenv('APP_TIMEZONE') ?: null) ?: 'Europe/London');
 $timestamp = date(DATE_ATOM);
 echo "[$timestamp] BMT budget guard started.\n";
 
-if ((getenv('AUTOMATION_MODE') ?: 'audit_only') !== 'audit_only') {
+if ((($_ENV['AUTOMATION_MODE'] ?? $_SERVER['AUTOMATION_MODE'] ?? getenv('AUTOMATION_MODE') ?: null) ?: 'audit_only') !== 'audit_only') {
     fwrite(STDERR, "Mutation mode is not implemented by this job. Continuing with proposal-only optimisation.\n");
 }
 
 try {
-    $date = (new DateTimeImmutable('yesterday', new DateTimeZone(getenv('APP_TIMEZONE') ?: 'Europe/London')))->format('Y-m-d');
+    $date = (new DateTimeImmutable('yesterday', new DateTimeZone(($_ENV['APP_TIMEZONE'] ?? $_SERVER['APP_TIMEZONE'] ?? getenv('APP_TIMEZONE') ?: null) ?: 'Europe/London')))->format('Y-m-d');
     $queued = (new OptimiserService(new Database()))->queueDailyOptimisations($date);
 
     $summary = [
