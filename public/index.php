@@ -82,6 +82,8 @@ p{color:var(--muted);line-height:1.55}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin:18px 0 8px}
 .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px 20px;box-shadow:var(--shadow)}
 .card>div:first-child{color:var(--muted);font-size:12.5px;font-weight:650;text-transform:uppercase;letter-spacing:.03em;margin-bottom:6px}
+.card:has(a){transition:box-shadow .12s,transform .08s;cursor:pointer}
+.card:has(a):hover{box-shadow:0 4px 14px rgba(16,24,40,.1);transform:translateY(-1px)}
 .metric{font-size:30px;font-weight:800;color:var(--ink);letter-spacing:-.02em}
 .toolbar{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin:0 0 18px;flex-wrap:wrap}
 .toolbar p{margin:6px 0 0}
@@ -214,7 +216,7 @@ if ($path === '/changes') {
     render('Changes','<div class="toolbar"><div><h1>Automation changes</h1><p>Automation mode: <strong>'.h(envValue('AUTOMATION_MODE','audit_only')).'</strong>. Approving a change only marks it ready — nothing reaches Google Ads until you click below, so you control exactly when each batch of changes goes live.</p></div>'.$runButton.'</div>'.$flash.'<table><thead><tr><th>Type</th><th>Resource</th><th>Reason</th><th>Risk</th><th>Status</th><th>Created</th><th>Action</th></tr></thead><tbody>'.($rows?:'<tr><td colspan="7">No automation changes yet.</td></tr>').'</tbody></table>',$user);
 }
 
-$data=$leads->dashboard(); $t=$data['today']; $cards='<div class="grid"><div class="card"><div>New leads today</div><div class="metric">'.h($t['total']??0).'</div></div><div class="card"><div>Qualified today</div><div class="metric">'.h($t['qualified']??0).'</div></div><div class="card"><div>Completed today</div><div class="metric">'.h($t['completed']??0).'</div></div><div class="card"><div>Completed revenue today</div><div class="metric">£'.h(number_format((float)($t['revenue']??0),2)).'</div></div></div>';
+$data=$leads->dashboard(); $t=$data['today']; $pendingApprovals=(new \BMT\Dashboard\DashboardService(new Database()))->overview()['pending_approvals'] ?? 0; $cards='<div class="grid"><div class="card"><div>New leads today</div><div class="metric">'.h($t['total']??0).'</div></div><div class="card"><div>Qualified today</div><div class="metric">'.h($t['qualified']??0).'</div></div><div class="card"><div>Completed today</div><div class="metric">'.h($t['completed']??0).'</div></div><div class="card"><div>Completed revenue today</div><div class="metric">£'.h(number_format((float)($t['revenue']??0),2)).'</div></div><div class="card"><a href="/changes" style="text-decoration:none;color:inherit"><div>Pending approvals</div><div class="metric">'.h($pendingApprovals).'</div></a></div></div>';
 $pipeline=''; foreach($data['pipeline'] as $p)$pipeline.='<tr><td>'.h(ucwords(str_replace('_',' ',$p['status']))).'</td><td>'.h($p['total']).'</td></tr>';
 $body='<div class="toolbar"><div><h1>Dashboard</h1><p>Welcome, '.h($user['name']).'. Automation mode: <strong>'.h(envValue('AUTOMATION_MODE', 'audit_only')).'</strong></p></div><a class="button" href="/leads/new">Add lead</a></div>'.$cards.'<h2>Lead pipeline</h2><table><tr><th>Status</th><th>Total</th></tr>'.$pipeline.'</table>';
 render('Dashboard',$body,$user);
