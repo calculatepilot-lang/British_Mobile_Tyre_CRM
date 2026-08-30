@@ -16,6 +16,34 @@ final class LeadService
     /** Minutes within which a matching phone or email is treated as a duplicate submission. */
     private const DUPLICATE_WINDOW_MINUTES = 30;
 
+    /**
+     * Turns a page URL into a human-readable label when the caller didn't
+     * already supply one — e.g. '/mobile-tyre-repair/london/' becomes
+     * 'Mobile Tyre Repair London', and the homepage becomes 'Home'. This is
+     * a fallback only: if the frontend sends source_page_label directly
+     * (e.g. from document.title), that's always preferred since it can't
+     * misread a slug the way a mechanical URL parse can.
+     */
+    public static function deriveSourcePageLabel(?string $url): ?string
+    {
+        if ($url === null || trim($url) === '') {
+            return null;
+        }
+
+        $path = trim((string) (parse_url($url, PHP_URL_PATH) ?: '/'), '/');
+        if ($path === '') {
+            return 'Home';
+        }
+
+        $segments = array_filter(explode('/', $path), static fn($s) => $s !== '');
+        $words = [];
+        foreach ($segments as $segment) {
+            $words[] = ucwords(str_replace(['-', '_'], ' ', $segment));
+        }
+
+        return implode(' ', $words);
+    }
+
     public function create(array $lead, array $attribution = []): string
     {
         $type = $lead['lead_type'] ?? '';
@@ -32,7 +60,8 @@ final class LeadService
         $pdo->beginTransaction();
 
         try {
-            $stmt = $pdo->prepare('INSERT INTO leads (public_id, status, lead_type, source, customer_name, customer_phone, customer_email, service_requested, tyre_size, vehicle_registration, city, postcode, language) VALUES (:public_id, :status, :lead_type, :source, :customer_name, :customer_phone, :customer_email, :service_requested, :tyre_size, :vehicle_registration, :city, :postcode, :language)');
+            $stmt = $pdo->prepare('INSERT INTO leads (public_id, status, lead_type, source, customer_name, customer_phone, customer_email, service_requested, tyre_size, vehicle_registration, city, postcode, language, source_page_url, source_page_label) VALUES (:public_id, :status, :lead_type, :source, :customer_name, :customer_phone, :customer_email, :service_requested, :tyre_size, :vehicle_registration, :city, :postcode, :language, :source_page_url, :source_page_label)');
+            $sourcePageUrl = $lead['source_page_url'] ?? null;
             $stmt->execute([
                 'public_id' => $publicId,
                 'status' => $duplicateOf !== null ? 'duplicate' : 'new',
@@ -47,6 +76,8 @@ final class LeadService
                 'city' => $lead['city'] ?? null,
                 'postcode' => $lead['postcode'] ?? null,
                 'language' => $this->normaliseLanguage($lead['language'] ?? null),
+                'source_page_url' => $sourcePageUrl,
+                'source_page_label' => $lead['source_page_label'] ?? self::deriveSourcePageLabel($sourcePageUrl),
             ]);
 
             $leadId = (int) $pdo->lastInsertId();
