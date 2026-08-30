@@ -34,6 +34,36 @@ $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
 function h(mixed $value): string { return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8'); }
 function redirect(string $to): never { header('Location: ' . $to, true, 302); exit; }
+
+/** Customer name if we have one, otherwise a stable "Customer #<id>" using the lead's own numeric id. */
+function leadDisplayName(array $lead): string {
+    $name = trim((string) ($lead['customer_name'] ?? ''));
+    return $name !== '' ? $name : 'Customer #' . (int) ($lead['id'] ?? 0);
+}
+
+/** Strips a phone number down to a wa.me-compatible digit string, assuming UK numbers (leading 0 -> 44). */
+function phoneToWhatsAppDigits(string $phone): string {
+    $digits = preg_replace('/\D+/', '', $phone) ?? '';
+    if ($digits === '') return '';
+    if (str_starts_with($digits, '0')) return '44' . substr($digits, 1);
+    if (str_starts_with($digits, '44')) return $digits;
+    if (str_starts_with($digits, '440')) return '44' . substr($digits, 3);
+    return $digits;
+}
+
+/** Small Call + WhatsApp action buttons next to a phone number, or an em dash if there's no phone at all. */
+function phoneActions(?string $phone): string {
+    $phone = trim((string) $phone);
+    if ($phone === '') return '—';
+    $wa = phoneToWhatsAppDigits($phone);
+    $out = '<span style="white-space:nowrap">' . h($phone) . '</span> ';
+    $out .= '<a href="tel:' . h($phone) . '" title="Call" style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:999px;background:#EAF1FF;color:#0B4FCF;text-decoration:none;font-size:13px;margin-left:4px">☎</a>';
+    if ($wa !== '') {
+        $out .= '<a href="https://wa.me/' . h($wa) . '" target="_blank" rel="noopener" title="WhatsApp" style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:999px;background:#E8F7EE;color:#0F7A3D;text-decoration:none;font-size:13px;margin-left:4px">💬</a>';
+    }
+    return $out;
+}
+
 function statusBadge(string $status): string {
     $label = h(ucwords(str_replace('_', ' ', $status)));
     $palette = [
@@ -207,12 +237,12 @@ if (preg_match('#^/leads/([^/]+)$#', $path, $m)) {
         $inputs .= '<div class="form-meta" style="grid-column:1/-1">Full source URL: <a href="'.h($lead['source_page_url']).'" target="_blank" rel="noopener">'.h($lead['source_page_url']).'</a></div>';
     }
     $inputs .= '<label style="grid-column:1/-1">Remarks (internal notes)<textarea name="remarks" rows="4" placeholder="Manual notes for this lead — anything worth flagging for whoever follows up next.">'.h($lead['remarks']??'').'</textarea></label>';
-    $body='<div class="toolbar"><div><h1>'.h($lead['public_id']).'</h1><p>'.statusBadge($lead['status']).' &nbsp;'.h($lead['lead_type']).' · '.h($lead['source']).'</p></div><a class="button" href="/leads">Back to leads</a></div><form class="form form-grid" method="post" action="/leads/'.rawurlencode($lead['public_id']).'/update"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><div class="form-meta">Campaign: '.h($lead['campaign_name']??'—').' · Ad group: '.h($lead['ad_group_name']??'—').'<br>Keyword: '.h($lead['keyword_text']??'—').' · GCLID: '.h($lead['gclid']??'—').'</div><div class="form-section">Lead status</div><label>Status<select name="status">'.$statuses.'</select></label><div class="form-section">Details</div>'.$inputs.'<div class="form-actions"><button>Save changes</button></div></form>';
+    $body='<div class="toolbar"><div><h1>'.h(leadDisplayName($lead)).'</h1><p>'.statusBadge($lead['status']).' &nbsp;'.h($lead['lead_type']).' · '.h($lead['source']).' &nbsp;'.phoneActions($lead['customer_phone']).'</p></div><a class="button" href="/leads">Back to leads</a></div><form class="form form-grid" method="post" action="/leads/'.rawurlencode($lead['public_id']).'/update"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><div class="form-meta">Campaign: '.h($lead['campaign_name']??'—').' · Ad group: '.h($lead['ad_group_name']??'—').'<br>Keyword: '.h($lead['keyword_text']??'—').' · GCLID: '.h($lead['gclid']??'—').'</div><div class="form-section">Lead status</div><label>Status<select name="status">'.$statuses.'</select></label><div class="form-section">Details</div>'.$inputs.'<div class="form-actions"><button>Save changes</button></div></form>';
     render('Lead ' . $lead['public_id'], $body, $user);
 }
 if ($path === '/leads') {
-    $rows=''; foreach($leads->list(100) as $lead){$rows.='<tr><td><a href="/leads/'.rawurlencode($lead['public_id']).'">'.h($lead['public_id']).'</a></td><td>'.statusBadge($lead['status']).'</td><td>'.h($lead['lead_type']).'</td><td>'.h($lead['customer_name']?:'—').'</td><td>'.h($lead['tyre_size']?:'—').'</td><td>'.h($lead['source_page_label']?:'—').'</td><td>'.h($lead['city']?:'—').'</td><td>'.h($lead['campaign_name']?:'—').'</td><td>'.h($lead['created_at']).'</td></tr>';}
-    render('Leads','<div class="toolbar"><h1>Leads</h1><a class="button" href="/leads/new">Add lead</a></div><table><thead><tr><th>ID</th><th>Status</th><th>Type</th><th>Customer</th><th>Tyre size</th><th>Source page</th><th>City</th><th>Campaign</th><th>Created</th></tr></thead><tbody>'.($rows?:'<tr><td colspan="9">No leads yet.</td></tr>').'</tbody></table>',$user);
+    $rows=''; foreach($leads->list(100) as $lead){$rows.='<tr><td><a href="/leads/'.rawurlencode($lead['public_id']).'">'.h(leadDisplayName($lead)).'</a></td><td>'.statusBadge($lead['status']).'</td><td>'.h($lead['lead_type']).'</td><td>'.phoneActions($lead['customer_phone']).'</td><td>'.h($lead['tyre_size']?:'—').'</td><td>'.h($lead['source_page_label']?:'—').'</td><td>'.h($lead['city']?:'—').'</td><td>'.h($lead['campaign_name']?:'—').'</td><td>'.h($lead['created_at']).'</td></tr>';}
+    render('Leads','<div class="toolbar"><h1>Leads</h1><a class="button" href="/leads/new">Add lead</a></div><table><thead><tr><th>Customer</th><th>Status</th><th>Type</th><th>Contact</th><th>Tyre size</th><th>Source page</th><th>City</th><th>Campaign</th><th>Created</th></tr></thead><tbody>'.($rows?:'<tr><td colspan="9">No leads yet.</td></tr>').'</tbody></table>',$user);
 }
 if (preg_match('#^/changes/([0-9a-f-]{36})/approve$#', $path, $m) && $method === 'POST') {
     if (!AuthService::verifyCsrf($_POST['csrf'] ?? null)) { http_response_code(419); render('Invalid request', '<h1>Invalid request</h1>', $user); }
