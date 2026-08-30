@@ -18,7 +18,8 @@
     "budget-guard": "php cron/budget_guard.php",
     "monitoring": "php cron/monitoring.php",
     "daily-report": "php cron/send_daily_report.php",
-    "execute-conversion-actions": "php cron/execute_conversion_actions.php"
+    "execute-conversion-actions": "php cron/execute_conversion_actions.php",
+    "claude-optimisation": "php cron/claude_daily_optimisation.php"
   },
   "config": {
     "sort-packages": true,
