@@ -20,7 +20,7 @@ $timestamp = date(DATE_ATOM);
 echo "[$timestamp] BMT daily audit started.\n";
 
 if ((($_ENV['AUTOMATION_MODE'] ?? $_SERVER['AUTOMATION_MODE'] ?? getenv('AUTOMATION_MODE') ?: null) ?: 'audit_only') !== 'audit_only') {
-    fwrite(STDERR, "Mutation mode is not implemented by this job. Continuing with read-only audit only.\n");
+    fwrite(STDERR, "This job only queues proposals — it never mutates Google Ads itself. Live execution (once approved) happens via /changes or cron/execute_conversion_actions.php.\n");
 }
 
 try {

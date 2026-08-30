@@ -17,7 +17,7 @@ $timestamp = date(DATE_ATOM);
 echo "[$timestamp] BMT budget guard started.\n";
 
 if ((($_ENV['AUTOMATION_MODE'] ?? $_SERVER['AUTOMATION_MODE'] ?? getenv('AUTOMATION_MODE') ?: null) ?: 'audit_only') !== 'audit_only') {
-    fwrite(STDERR, "Mutation mode is not implemented by this job. Continuing with proposal-only optimisation.\n");
+    fwrite(STDERR, "This job only queues proposals — it never mutates Google Ads itself. Live execution (once approved) happens via /changes.\n");
 }
 
 try {

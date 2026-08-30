@@ -51,7 +51,7 @@ Review all of the following:
 6. Approval workflow and rollback snapshots.
 7. At least several days of audit-only data.
 
-No live mutation workflow is included in the current phase.
+No live mutation workflow was included in this original setup phase — that has since changed; see the sections below.
 
 ## Approved conversion-action creation (scheduled)
 
