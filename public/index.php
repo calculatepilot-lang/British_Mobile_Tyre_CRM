@@ -13,6 +13,7 @@ use BMT\Optimisation\LeadQualityReport;
 use BMT\Optimisation\OptimiserService;
 use BMT\Finance\FinanceService;
 use BMT\Finance\FinanceSummaryService;
+use BMT\Finance\ImportService;
 
 $root = dirname(__DIR__);
 if (is_file($root . '/.env')) {
@@ -261,6 +262,47 @@ if (preg_match('#^/finance/category/(\d+)/archive$#', $path, $m) && $method === 
     (new FinanceService())->archiveCategory((int) $m[1]);
     redirect('/finance');
 }
+if ($path === '/finance/import' && $method === 'POST') {
+    if (!AuthService::verifyCsrf($_POST['csrf'] ?? null)) { http_response_code(419); render('Invalid request', '<h1>Invalid request</h1>', $user); }
+    $file = $_FILES['import_file'] ?? null;
+    if (!$file || $file['error'] !== UPLOAD_ERR_OK || $file['size'] === 0) {
+        render('Finance', '<h1>Finance</h1><p class="notice">No file was uploaded, or the upload failed. Try again with a .csv file.</p><p><a href="/finance/import">Back to import</a></p>', $user);
+    }
+    $ext = strtolower(pathinfo((string)$file['name'], PATHINFO_EXTENSION));
+    if ($ext !== 'csv') {
+        render('Finance', '<h1>Finance</h1><p class="notice">Only .csv files are supported right now — got .'.h($ext).'. Export your spreadsheet/statement as CSV and try again.</p><p><a href="/finance/import">Back to import</a></p>', $user);
+    }
+    try {
+        $result = (new ImportService())->importCsv((string)$file['tmp_name'], (string)$file['name'], (string)$user['email']);
+        redirect('/finance/import?imported='.$result['rows_imported'].'&rejected='.$result['rows_rejected'].'&total='.$result['rows_total']);
+    } catch (\Throwable $e) {
+        render('Finance', '<h1>Finance</h1><p class="notice">Import failed: '.h($e->getMessage()).'</p><p><a href="/finance/import">Back to import</a></p>', $user);
+    }
+}
+if ($path === '/finance/import') {
+    $imports = (new ImportService())->listImports(20);
+    $rows = '';
+    foreach ($imports as $i) {
+        $statusClass = match($i['status']) { 'completed' => 'low', 'needs_review' => 'medium', 'failed' => 'high', default => 'medium' };
+        $rows .= '<tr><td>'.h($i['created_at']).'</td><td>'.h($i['original_filename']).'</td><td>'.statusBadge($i['status']).'</td><td>'.h($i['rows_imported']).' / '.h($i['rows_total']).'</td><td>'.h($i['rows_rejected']).'</td></tr>';
+    }
+    $historyTable = '<table><thead><tr><th>Date</th><th>File</th><th>Status</th><th>Imported</th><th>Rejected</th></tr></thead><tbody>'.($rows?:'<tr><td colspan="5">No imports yet.</td></tr>').'</tbody></table>';
+
+    $flash = '';
+    if (isset($_GET['total'])) {
+        $imported = (int)($_GET['imported']??0); $rejected = (int)($_GET['rejected']??0); $total = (int)($_GET['total']??0);
+        $flash = $rejected > 0
+            ? '<p class="notice">Imported '.$imported.' of '.$total.' rows — '.$rejected.' rejected. Check the row below for the error summary, or re-export and try the rejected rows again.</p>'
+            : '<p class="notice" style="background:#E8F7EE;color:#0F7A3D;border-color:#B9E6C9">Imported all '.$total.' row(s) successfully.</p>';
+    }
+
+    $body = '<div class="toolbar"><div><h1>Import expenses</h1><p>Upload a CSV of expenses — a bank/card statement export works well. Needs a date column and an amount column; category, payee, and description are optional and auto-detected by header name.</p></div><a class="button" href="/finance">Back to Finance</a></div>'
+        .$flash
+        .'<form class="form" method="post" action="/finance/import" enctype="multipart/form-data"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><label>CSV file<input type="file" name="import_file" accept=".csv" required></label><div class="form-meta">Recognised headers (case-insensitive): <strong>date</strong> or expense_date · <strong>amount</strong> · category · payee/supplier/merchant · description/note/memo. Amounts should be in GBP; each imported row locks the GBP→PKR rate at import time, same as a manually entered expense.</div><div class="form-actions"><button>Upload and import</button></div></form>'
+        .'<h2>Import history</h2>'.$historyTable;
+
+    render('Import expenses', $body, $user);
+}
 if ($path === '/finance') {
     $finance = new FinanceService();
     $categories = $finance->listCategories();
@@ -320,7 +362,7 @@ if ($path === '/finance') {
 
     $notice = $summaryError ? '<p class="notice">Finance tables aren\'t set up yet — run <code>database/finance_v2_migration.sql</code> against the CRM database, then reload this page. ('.h($summaryError).')</p>' : '';
 
-    $body = '<div class="toolbar"><div><h1>Finance</h1><p>Income and expenses across the business — Google Ads spend, payments, and manual income. Every expense locks its GBP→PKR rate at entry.</p></div></div>'
+    $body = '<div class="toolbar"><div><h1>Finance</h1><p>Income and expenses across the business — Google Ads spend, payments, and manual income. Every expense locks its GBP→PKR rate at entry.</p></div><a class="button" href="/finance/import">Import CSV</a></div>'
         .$notice.$cardsHtml
         .'<h2>Expenses by category — this month</h2>'.$byCategoryTable
         .'<h2>Categories</h2><div class="chip-row">'.($categoryChips?:'<p style="color:var(--muted)">No categories yet.</p>').'</div>'

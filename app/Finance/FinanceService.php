@@ -58,7 +58,7 @@ final class FinanceService
      * converted_amount_pkr / rate_locked_at. The locked rate never changes
      * retroactively, even if the live rate moves later.
      */
-    public function createExpense(array $data, ?string $createdBy = null): int
+    public function createExpense(array $data, ?string $createdBy = null, ?string $importBatchId = null): int
     {
         $amountGbp = (float) ($data['amount_gbp'] ?? 0);
         if ($amountGbp <= 0) {
@@ -72,22 +72,23 @@ final class FinanceService
             'INSERT INTO expenses
                 (expense_date, category, category_id, description, amount, currency,
                  exchange_rate_to_pkr, rate_source, rate_locked_at, converted_amount_pkr,
-                 supplier, created_by)
+                 supplier, import_batch_id, created_by)
              VALUES
                 (:expense_date, :category, :category_id, :description, :amount, \'GBP\',
                  :rate, :rate_source, NOW(), :converted_pkr,
-                 :supplier, :created_by)'
+                 :supplier, :import_batch_id, :created_by)'
         );
         $stmt->execute([
             'expense_date' => $data['expense_date'] ?? date('Y-m-d'),
             'category' => $data['category'] ?? 'Uncategorised',
-            'category_id' => $data['category_id'] !== '' ? (int) $data['category_id'] : null,
+            'category_id' => ($data['category_id'] ?? '') !== '' ? (int) $data['category_id'] : null,
             'description' => $data['description'] ?? null,
             'amount' => $amountGbp,
             'rate' => $rate,
             'rate_source' => 'open.er-api.com',
             'converted_pkr' => $convertedPkr,
             'supplier' => $data['payee'] ?? null,
+            'import_batch_id' => $importBatchId,
             'created_by' => $createdBy,
         ]);
 
