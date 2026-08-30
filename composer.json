@@ -17,7 +17,8 @@
     "daily-audit": "php cron/daily_audit.php",
     "budget-guard": "php cron/budget_guard.php",
     "monitoring": "php cron/monitoring.php",
-    "daily-report": "php cron/send_daily_report.php"
+    "daily-report": "php cron/send_daily_report.php",
+    "execute-conversion-actions": "php cron/execute_conversion_actions.php"
   },
   "config": {
     "sort-packages": true,

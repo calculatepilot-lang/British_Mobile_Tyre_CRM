@@ -48,6 +48,54 @@ final class ChangeExecutor
     }
 
     /**
+     * Executes only approved (status='planned') changes matching the given
+     * change_type(s). Used by the scheduled conversion-action executor so
+     * low-risk, reversible conversion-action creations can run unattended
+     * on a cron once approved — while budget and pause changes stay on the
+     * manual "Run approved changes" dashboard button, since those carry
+     * real spend risk that deserves a human clicking the button at the
+     * moment they want it applied, not just approving it earlier.
+     *
+     * @param string[] $changeTypes
+     * @return array{executed: string[], failed: string[], skipped: string[]}
+     */
+    public function runPendingByType(array $changeTypes): array
+    {
+        $result = ['executed' => [], 'failed' => [], 'skipped' => []];
+
+        foreach ($this->approvals->pending() as $change) {
+            if (!in_array($change['change_type'], $changeTypes, true)) {
+                $result['skipped'][] = $change['change_uuid'];
+                continue;
+            }
+
+            $uuid = $change['change_uuid'];
+            try {
+                $before = match ($change['change_type']) {
+                    'create_conversion_action' => $this->createConversionAction($change),
+                    'increase_budget', 'decrease_budget' => $this->changeBudget($change),
+                    'pause_campaign' => $this->pauseCampaign($change),
+                    default => null,
+                };
+
+                if ($before === null) {
+                    $this->approvals->markFailed($uuid, 'Unknown change_type: ' . $change['change_type']);
+                    $result['failed'][] = $uuid;
+                    continue;
+                }
+
+                $this->approvals->markExecuted($uuid, $before['resource_id'] ?? null, $before);
+                $result['executed'][] = $uuid;
+            } catch (Throwable $e) {
+                $this->approvals->markFailed($uuid, $e->getMessage());
+                $result['failed'][] = $uuid;
+            }
+        }
+
+        return $result;
+    }
+
+    /**
      * Executes every approved (status='planned') change. Each change is
      * handled independently — one failure never blocks the rest, and every
      * outcome (success or failure) is recorded on the change itself.

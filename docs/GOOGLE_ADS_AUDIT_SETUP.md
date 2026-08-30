@@ -52,3 +52,27 @@ Review all of the following:
 7. At least several days of audit-only data.
 
 No live mutation workflow is included in the current phase.
+
+## Approved conversion-action creation (scheduled)
+
+This section is newer than the rest of this doc: a mutation executor (`app/Execution/ChangeExecutor.php`) now exists and can create conversion actions in Google Ads once a proposal is approved on `/changes`. Budget and pause changes still require a human to click "Run approved changes" on that page — but approved conversion-action creations can run unattended on a schedule, since a new conversion action does nothing to spend or targeting by itself and is easily paused/archived if it turns out wrong.
+
+Add a Hostinger cron job (hPanel → Advanced → Cron Jobs) to run hourly, or right after `daily_audit.php`:
+
+```bash
+php /home/USER/domains/britishmobiletyres.co.uk/public_html/ads/cron/execute_conversion_actions.php
+```
+
+or via Composer:
+
+```bash
+composer run execute-conversion-actions
+```
+
+This job:
+- Only touches proposals with `change_type = 'create_conversion_action'` and `status = 'planned'` (i.e. already approved by a human on `/changes`) — it never approves anything itself.
+- Skips everything else (budget/pause changes stay manual-only via the dashboard button).
+- Exits with status `2` if any execution failed, so cron-monitoring/alerting can flag it, without treating a partial success as a hard failure.
+- Logs failures to `error_logs` the same way `daily_audit.php` does.
+
+`AUTOMATION_MODE` still gates whether the audit queues new proposals at all — this executor only processes what's already been approved, regardless of that setting, since approval is itself the safety gate at that point.
