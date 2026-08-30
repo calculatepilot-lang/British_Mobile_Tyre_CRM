@@ -69,4 +69,53 @@ final class FinanceSummaryService
             'year' => $this->summary($now->format('Y-01-01'), $now->format('Y-m-d')),
         ];
     }
+
+    /**
+     * All-time totals since the business's first recorded transaction —
+     * the headline "what have we earned, what's our profit" figures.
+     * Uses the earliest of the first lead conversion, first manual income
+     * entry, or first expense as the starting point, so the range always
+     * covers everything on record rather than an arbitrary fixed date.
+     */
+    public function lifetime(): array
+    {
+        $pdo = $this->database->pdo();
+
+        $earliest = $pdo->query(
+            "SELECT LEAST(
+                COALESCE((SELECT MIN(converted_at) FROM leads WHERE status='converted'), '2999-01-01'),
+                COALESCE((SELECT MIN(received_at) FROM income), '2999-01-01'),
+                COALESCE((SELECT MIN(expense_date) FROM expenses WHERE currency='GBP'), '2999-01-01')
+            )"
+        )->fetchColumn();
+
+        $from = $earliest && substr((string)$earliest, 0, 4) !== '2999' ? substr((string)$earliest, 0, 10) : date('Y-m-d');
+        $summary = $this->summary($from, date('Y-m-d'));
+        $summary['since'] = $from;
+        return $summary;
+    }
+
+    /**
+     * Month-by-month income/expenses/net for the last $months calendar
+     * months (most recent first) — the trend line for the overall report.
+     */
+    public function monthlyTrend(int $months = 12): array
+    {
+        $tz = new DateTimeZone('Europe/London');
+        $now = new DateTimeImmutable('now', $tz);
+        $rows = [];
+        for ($i = 0; $i < $months; $i++) {
+            $month = $now->modify("-{$i} months");
+            $from = $month->format('Y-m-01');
+            $to = $month->format('Y-m-t');
+            $s = $this->summary($from, $to);
+            $rows[] = [
+                'label' => $month->format('M Y'),
+                'earned_gbp' => $s['earned_gbp'],
+                'expenses_gbp' => $s['expenses_gbp'],
+                'net_gbp' => $s['net_gbp'],
+            ];
+        }
+        return $rows;
+    }
 }

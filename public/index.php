@@ -262,6 +262,56 @@ if (preg_match('#^/finance/category/(\d+)/archive$#', $path, $m) && $method === 
     (new FinanceService())->archiveCategory((int) $m[1]);
     redirect('/finance');
 }
+if ($path === '/finance/report') {
+    $summaryError = null;
+    $lifetime = null;
+    $trend = [];
+    try {
+        $svc = new FinanceSummaryService(new Database());
+        $lifetime = $svc->lifetime();
+        $trend = $svc->monthlyTrend(12);
+    } catch (\Throwable $e) {
+        $summaryError = $e->getMessage();
+    }
+
+    $notice = $summaryError ? '<p class="notice">Finance tables aren\'t set up yet — run <code>database/finance_v2_migration.sql</code>, then reload this page. ('.h($summaryError).')</p>' : '';
+
+    $cardsHtml = '';
+    if ($lifetime !== null) {
+        $netClass = $lifetime['net_gbp'] >= 0 ? 'positive' : 'negative';
+        $sinceLabel = $lifetime['since'] === date('Y-m-d') ? 'no transactions recorded yet' : 'since '.h(date('d M Y', strtotime($lifetime['since'])));
+        $cardsHtml = '<div class="finance-grid">'
+            .'<div class="finance-card income"><div>Total earned</div><div class="metric positive">£'.h(number_format($lifetime['earned_gbp'],2)).'</div><div class="sub">£'.h(number_format($lifetime['earned_from_leads_gbp'],2)).' from leads · £'.h(number_format($lifetime['earned_manual_gbp'],2)).' manual</div></div>'
+            .'<div class="finance-card expense"><div>Total spent</div><div class="metric negative">£'.h(number_format($lifetime['expenses_gbp'],2)).'</div><div class="sub">₨'.h(number_format($lifetime['expenses_pkr'],2)).' at locked rates</div></div>'
+            .'<div class="finance-card net"><div>Lifetime profit</div><div class="metric '.$netClass.'">£'.h(number_format($lifetime['net_gbp'],2)).'</div><div class="sub">'.$sinceLabel.'</div></div>'
+            .'</div>';
+    }
+
+    $byCategoryTable = '<p style="color:var(--muted)">No expenses recorded yet.</p>';
+    if ($lifetime !== null && !empty($lifetime['by_category'])) {
+        $totalGbp = array_sum(array_column($lifetime['by_category'], 'gbp')) ?: 1;
+        $rows = '';
+        foreach ($lifetime['by_category'] as $row) {
+            $pct = round(((float)$row['gbp'] / $totalGbp) * 100, 1);
+            $rows .= '<tr><td>'.h($row['category']).'</td><td class="amount-gbp">£'.h(number_format((float)$row['gbp'],2)).'</td><td class="amount-pkr">₨'.h(number_format((float)$row['pkr'],2)).'</td><td>'.h($pct).'%</td><td>'.h($row['count']).'</td></tr>';
+        }
+        $byCategoryTable = '<table><thead><tr><th>Category</th><th>GBP</th><th>PKR</th><th>Share</th><th>Count</th></tr></thead><tbody>'.$rows.'</tbody></table>';
+    }
+
+    $trendRows = '';
+    foreach ($trend as $t) {
+        $rowNetClass = $t['net_gbp'] >= 0 ? 'positive' : 'negative';
+        $trendRows .= '<tr><td>'.h($t['label']).'</td><td class="amount-gbp" style="color:#0F7A3D">£'.h(number_format($t['earned_gbp'],2)).'</td><td class="amount-gbp" style="color:var(--brand)">£'.h(number_format($t['expenses_gbp'],2)).'</td><td class="amount-gbp"><span class="metric '.$rowNetClass.'" style="font-size:14px">£'.h(number_format($t['net_gbp'],2)).'</span></td></tr>';
+    }
+    $trendTable = '<table><thead><tr><th>Month</th><th>Earned</th><th>Spent</th><th>Net</th></tr></thead><tbody>'.($trendRows?:'<tr><td colspan="4">No data yet.</td></tr>').'</tbody></table>';
+
+    $body = '<div class="toolbar"><div><h1>Overall report</h1><p>Lifetime earnings, spending, and profit across the whole business — every converted lead, manual income entry, and recorded expense to date.</p></div><a class="button" href="/finance">Back to Finance</a></div>'
+        .$notice.$cardsHtml
+        .'<h2>Lifetime spending by category</h2>'.$byCategoryTable
+        .'<h2>Last 12 months</h2>'.$trendTable;
+
+    render('Overall report', $body, $user);
+}
 if ($path === '/finance/import' && $method === 'POST') {
     if (!AuthService::verifyCsrf($_POST['csrf'] ?? null)) { http_response_code(419); render('Invalid request', '<h1>Invalid request</h1>', $user); }
     $file = $_FILES['import_file'] ?? null;
@@ -362,7 +412,7 @@ if ($path === '/finance') {
 
     $notice = $summaryError ? '<p class="notice">Finance tables aren\'t set up yet — run <code>database/finance_v2_migration.sql</code> against the CRM database, then reload this page. ('.h($summaryError).')</p>' : '';
 
-    $body = '<div class="toolbar"><div><h1>Finance</h1><p>Income and expenses across the business — Google Ads spend, payments, and manual income. Every expense locks its GBP→PKR rate at entry.</p></div><a class="button" href="/finance/import">Import CSV</a></div>'
+    $body = '<div class="toolbar"><div><h1>Finance</h1><p>Income and expenses across the business — Google Ads spend, payments, and manual income. Every expense locks its GBP→PKR rate at entry.</p></div><div style="display:flex;gap:10px"><a class="button" href="/finance/report" style="background:var(--ink-soft)">Overall report</a><a class="button" href="/finance/import">Import CSV</a></div></div>'
         .$notice.$cardsHtml
         .'<h2>Expenses by category — this month</h2>'.$byCategoryTable
         .'<h2>Categories</h2><div class="chip-row">'.($categoryChips?:'<p style="color:var(--muted)">No categories yet.</p>').'</div>'
