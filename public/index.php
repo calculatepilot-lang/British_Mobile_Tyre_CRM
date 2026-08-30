@@ -11,6 +11,8 @@ use BMT\Leads\LeadRepository;
 use BMT\Leads\LeadService;
 use BMT\Optimisation\LeadQualityReport;
 use BMT\Optimisation\OptimiserService;
+use BMT\Finance\FinanceService;
+use BMT\Finance\FinanceSummaryService;
 
 $root = dirname(__DIR__);
 if (is_file($root . '/.env')) {
@@ -48,7 +50,7 @@ function statusBadge(string $status): string {
 }
 function render(string $title, string $body, ?array $user): never {
     $currentPath = $GLOBALS['path'] ?? '';
-    $navItems = [['/', 'Dashboard'], ['/leads', 'Leads'], ['/leads/new', 'Add lead'], ['/insights', 'Insights'], ['/changes', 'Changes']];
+    $navItems = [['/', 'Dashboard'], ['/leads', 'Leads'], ['/leads/new', 'Add lead'], ['/insights', 'Insights'], ['/finance', 'Finance'], ['/changes', 'Changes']];
     $navLinks = '';
     foreach ($navItems as [$href, $label]) {
         $isActive = $href === '/' ? $currentPath === '/' : str_starts_with($currentPath, $href);
@@ -206,6 +208,104 @@ if ($path === '/changes/run-approved' && $method === 'POST') {
     } catch (\Throwable $e) {
         render('Changes', '<h1>Automation changes</h1><p class="notice">Run failed before any change could be processed: '.h($e->getMessage()).'</p><p><a href="/changes">Back to changes</a></p>', $user);
     }
+}
+if ($path === '/finance/expense/new' && $method === 'POST') {
+    if (!AuthService::verifyCsrf($_POST['csrf'] ?? null)) { http_response_code(419); render('Invalid request', '<h1>Invalid request</h1>', $user); }
+    try {
+        (new FinanceService())->createExpense($_POST, (string) $user['email']);
+    } catch (\Throwable $e) {
+        render('Finance', '<h1>Finance</h1><p class="notice">'.h($e->getMessage()).'</p><p><a href="/finance">Back to Finance</a></p>', $user);
+    }
+    redirect('/finance');
+}
+if ($path === '/finance/income/new' && $method === 'POST') {
+    if (!AuthService::verifyCsrf($_POST['csrf'] ?? null)) { http_response_code(419); render('Invalid request', '<h1>Invalid request</h1>', $user); }
+    try {
+        (new FinanceService())->createIncome($_POST, (string) $user['email']);
+    } catch (\Throwable $e) {
+        render('Finance', '<h1>Finance</h1><p class="notice">'.h($e->getMessage()).'</p><p><a href="/finance">Back to Finance</a></p>', $user);
+    }
+    redirect('/finance');
+}
+if ($path === '/finance/category/new' && $method === 'POST') {
+    if (!AuthService::verifyCsrf($_POST['csrf'] ?? null)) { http_response_code(419); render('Invalid request', '<h1>Invalid request</h1>', $user); }
+    try {
+        (new FinanceService())->createCategory((string) ($_POST['name'] ?? ''));
+    } catch (\Throwable $e) {
+        render('Finance', '<h1>Finance</h1><p class="notice">'.h($e->getMessage()).'</p><p><a href="/finance">Back to Finance</a></p>', $user);
+    }
+    redirect('/finance');
+}
+if (preg_match('#^/finance/category/(\d+)/archive$#', $path, $m) && $method === 'POST') {
+    if (!AuthService::verifyCsrf($_POST['csrf'] ?? null)) { http_response_code(419); render('Invalid request', '<h1>Invalid request</h1>', $user); }
+    (new FinanceService())->archiveCategory((int) $m[1]);
+    redirect('/finance');
+}
+if ($path === '/finance') {
+    $finance = new FinanceService();
+    $categories = $finance->listCategories();
+    $categoryOptions = '<option value="">Uncategorised</option>';
+    foreach ($categories as $c) { $categoryOptions .= '<option value="'.h($c['id']).'">'.h($c['name']).'</option>'; }
+
+    $summaryError = null;
+    $periods = ['today' => null, 'month' => null, 'year' => null];
+    try {
+        $periods = (new FinanceSummaryService(new Database()))->periods();
+    } catch (\Throwable $e) {
+        $summaryError = $e->getMessage();
+    }
+
+    $periodCard = static function (?array $p, string $label): string {
+        if ($p === null) return '<div class="card"><div>'.h($label).'</div><div class="metric">—</div></div>';
+        return '<div class="card"><div>'.h($label).' net</div><div class="metric">£'.h(number_format($p['net_gbp'],2)).'</div></div>';
+    };
+    $cardsHtml = '<div class="grid">'
+        .$periodCard($periods['today'] ?? null, 'Today')
+        .$periodCard($periods['month'] ?? null, 'This month')
+        .$periodCard($periods['year'] ?? null, 'This year')
+        .'</div>';
+
+    $byCategoryTable = '<p style="color:var(--muted)">No expenses recorded yet.</p>';
+    if (!empty($periods['month']['by_category'])) {
+        $rows = '';
+        foreach ($periods['month']['by_category'] as $row) {
+            $rows .= '<tr><td>'.h($row['category']).'</td><td>£'.h(number_format((float)$row['gbp'],2)).'</td><td>₨'.h(number_format((float)$row['pkr'],2)).'</td><td>'.h($row['count']).'</td></tr>';
+        }
+        $byCategoryTable = '<table><thead><tr><th>Category</th><th>GBP</th><th>PKR</th><th>Count</th></tr></thead><tbody>'.$rows.'</tbody></table>';
+    }
+
+    $expenseRows = '';
+    foreach ($finance->listExpenses(50) as $e) {
+        $expenseRows .= '<tr><td>'.h($e['expense_date']).'</td><td>'.h($e['category_name']?:'Uncategorised').'</td><td>'.h($e['payee']?:'—').'</td><td>£'.h(number_format((float)$e['amount_gbp'],2)).'</td><td>₨'.h(number_format((float)($e['amount_pkr']??0),2)).'</td><td>'.h($e['description']?:'—').'</td></tr>';
+    }
+    $expenseTable = '<table><thead><tr><th>Date</th><th>Category</th><th>Payee</th><th>GBP</th><th>PKR</th><th>Note</th></tr></thead><tbody>'.($expenseRows?:'<tr><td colspan="6">No expenses yet.</td></tr>').'</tbody></table>';
+
+    $incomeRows = '';
+    foreach ($finance->listIncome(50) as $i) {
+        $incomeRows .= '<tr><td>'.h($i['received_at']).'</td><td>'.h(ucwords($i['source'])).'</td><td>£'.h(number_format((float)$i['amount_gbp'],2)).'</td><td>'.h($i['description']?:'—').'</td></tr>';
+    }
+    $incomeTable = '<table><thead><tr><th>Date</th><th>Source</th><th>GBP</th><th>Note</th></tr></thead><tbody>'.($incomeRows?:'<tr><td colspan="4">No manual income recorded yet.</td></tr>').'</tbody></table>';
+
+    $categoryList = '';
+    foreach ($categories as $c) {
+        $archiveBtn = (int)$c['is_default'] === 0
+            ? '<form method="post" action="/finance/category/'.(int)$c['id'].'/archive" style="display:inline"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><button style="background:#b42318">Archive</button></form>'
+            : '';
+        $categoryList .= '<tr><td>'.h($c['name']).'</td><td>'.($c['is_default']?'Default':'Custom').'</td><td>'.$archiveBtn.'</td></tr>';
+    }
+
+    $notice = $summaryError ? '<p class="notice">Finance tables aren\'t set up yet — run <code>database/finance_v2_migration.sql</code> against the CRM database, then reload this page. ('.h($summaryError).')</p>' : '';
+
+    $body = '<h1>Finance</h1>'.$notice.$cardsHtml
+        .'<h2>Expenses by category — this month</h2>'.$byCategoryTable
+        .'<h2>Add expense</h2><form class="form form-grid" method="post" action="/finance/expense/new"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><label>Category<select name="category_id">'.$categoryOptions.'</select></label><label>Payee<input name="payee"></label><label>Amount (GBP)<input type="number" step="0.01" name="amount_gbp" required></label><label>Date<input type="date" name="expense_date" value="'.h(date('Y-m-d')).'"></label><label>Note<input name="description"></label><div class="form-actions"><button>Add expense</button></div></form>'
+        .'<h2>Recent expenses</h2>'.$expenseTable
+        .'<h2>Add income</h2><form class="form form-grid" method="post" action="/finance/income/new"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><label>Source<input name="source" value="manual"></label><label>Amount (GBP)<input type="number" step="0.01" name="amount_gbp" required></label><label>Date<input type="date" name="received_at" value="'.h(date('Y-m-d')).'"></label><label>Note<input name="description"></label><div class="form-actions"><button>Add income</button></div></form>'
+        .'<h2>Recent income</h2>'.$incomeTable
+        .'<h2>Categories</h2><table><thead><tr><th>Name</th><th>Type</th><th></th></tr></thead><tbody>'.($categoryList?:'<tr><td colspan="3">No categories yet.</td></tr>').'</tbody></table>'
+        .'<form class="form form-grid" method="post" action="/finance/category/new"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><label>New category name<input name="name" required></label><div class="form-actions"><button>Add category</button></div></form>';
+
+    render('Finance', $body, $user);
 }
 if ($path === '/insights') {
     $qualityTable = static function (array $rows): string {
