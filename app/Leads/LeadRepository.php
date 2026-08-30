@@ -42,18 +42,21 @@ final class LeadRepository
                 throw new RuntimeException('Lead not found.');
             }
 
-            $stmt = $pdo->prepare('UPDATE leads SET status = :status, customer_name = :customer_name, customer_phone = :customer_phone, customer_email = :customer_email, service_requested = :service_requested, city = :city, postcode = :postcode, quoted_amount = :quoted_amount, final_revenue = :final_revenue, outcome_reason = :outcome_reason, quality_score = :quality_score WHERE public_id = :public_id');
+            $stmt = $pdo->prepare('UPDATE leads SET status = :status, customer_name = :customer_name, customer_phone = :customer_phone, customer_email = :customer_email, service_requested = :service_requested, tyre_size = :tyre_size, vehicle_registration = :vehicle_registration, city = :city, postcode = :postcode, quoted_amount = :quoted_amount, final_revenue = :final_revenue, outcome_reason = :outcome_reason, remarks = :remarks, quality_score = :quality_score WHERE public_id = :public_id');
             $stmt->execute([
                 'status' => $status,
                 'customer_name' => $data['customer_name'] ?: null,
                 'customer_phone' => $data['customer_phone'] ?: null,
                 'customer_email' => $data['customer_email'] ?: null,
                 'service_requested' => $data['service_requested'] ?: null,
+                'tyre_size' => $data['tyre_size'] ?: null,
+                'vehicle_registration' => $data['vehicle_registration'] ?: null,
                 'city' => $data['city'] ?: null,
                 'postcode' => $data['postcode'] ?: null,
                 'quoted_amount' => $this->decimal($data['quoted_amount'] ?? null),
                 'final_revenue' => $this->decimal($data['final_revenue'] ?? null),
                 'outcome_reason' => $data['outcome_reason'] ?: null,
+                'remarks' => $data['remarks'] ?: null,
                 'quality_score' => $this->score($data['quality_score'] ?? null),
                 'public_id' => $publicId,
             ]);

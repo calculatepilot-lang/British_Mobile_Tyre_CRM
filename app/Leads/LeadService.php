@@ -32,7 +32,7 @@ final class LeadService
         $pdo->beginTransaction();
 
         try {
-            $stmt = $pdo->prepare('INSERT INTO leads (public_id, status, lead_type, source, customer_name, customer_phone, customer_email, service_requested, city, postcode, language) VALUES (:public_id, :status, :lead_type, :source, :customer_name, :customer_phone, :customer_email, :service_requested, :city, :postcode, :language)');
+            $stmt = $pdo->prepare('INSERT INTO leads (public_id, status, lead_type, source, customer_name, customer_phone, customer_email, service_requested, tyre_size, vehicle_registration, city, postcode, language) VALUES (:public_id, :status, :lead_type, :source, :customer_name, :customer_phone, :customer_email, :service_requested, :tyre_size, :vehicle_registration, :city, :postcode, :language)');
             $stmt->execute([
                 'public_id' => $publicId,
                 'status' => $duplicateOf !== null ? 'duplicate' : 'new',
@@ -42,6 +42,8 @@ final class LeadService
                 'customer_phone' => $lead['customer_phone'] ?? null,
                 'customer_email' => $lead['customer_email'] ?? null,
                 'service_requested' => $lead['service_requested'] ?? null,
+                'tyre_size' => $lead['tyre_size'] ?? null,
+                'vehicle_registration' => $lead['vehicle_registration'] ?? null,
                 'city' => $lead['city'] ?? null,
                 'postcode' => $lead['postcode'] ?? null,
                 'language' => $this->normaliseLanguage($lead['language'] ?? null),
