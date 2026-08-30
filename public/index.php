@@ -117,6 +117,26 @@ label{font-size:13px;font-weight:650;color:var(--text)}
 @media(max-width:640px){.form-grid{grid-template-columns:1fr}}
 .notice{padding:12px 14px;border-radius:9px;background:#FFF4E0;color:#7A5200;border:1px solid #F5DEA6;margin-bottom:18px;font-size:13.5px;font-weight:600}
 .status{display:inline-flex;padding:3px 10px;border-radius:999px;font-size:11.5px;font-weight:700;letter-spacing:.01em}
+.finance-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin:18px 0 8px}
+.finance-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px 20px;box-shadow:var(--shadow);border-left:4px solid var(--border)}
+.finance-card.income{border-left-color:#0F7A3D}
+.finance-card.expense{border-left-color:var(--brand)}
+.finance-card.net{border-left-color:var(--ink)}
+.finance-card>div:first-child{color:var(--muted);font-size:12.5px;font-weight:650;text-transform:uppercase;letter-spacing:.03em;margin-bottom:6px}
+.finance-card .metric{font-size:26px}
+.finance-card .metric.positive{color:#0F7A3D}
+.finance-card .metric.negative{color:var(--brand)}
+.finance-card .sub{font-size:12px;color:var(--muted);margin-top:4px}
+.finance-cols{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start;margin:18px 0}
+@media(max-width:900px){.finance-cols{grid-template-columns:1fr}}
+.chip-row{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 24px}
+.chip{display:inline-flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--border);border-radius:999px;padding:6px 8px 6px 14px;font-size:13px;font-weight:600;box-shadow:var(--shadow)}
+.chip.default{background:#EAF1FF;border-color:#C9DBFF;color:var(--ink)}
+.chip form{margin:0}
+.chip button{padding:4px 10px;font-size:11px;border-radius:999px;background:transparent!important;color:var(--muted)!important;box-shadow:none}
+.chip button:hover{background:#FBEAEA!important;color:var(--brand)!important}
+.amount-gbp{font-weight:700;color:var(--text)}
+.amount-pkr{font-size:12px;color:var(--muted)}
 @media(max-width:760px){aside{width:auto;flex:none;padding:14px}.layout{display:block}.content{padding:18px}aside nav{flex-direction:row;flex-wrap:wrap}}
 </style></head><body>' . ($user
         ? '<div class="layout">' . $nav . '<main class="content">' . $body . '</main></div>'
@@ -255,55 +275,62 @@ if ($path === '/finance') {
         $summaryError = $e->getMessage();
     }
 
-    $periodCard = static function (?array $p, string $label): string {
-        if ($p === null) return '<div class="card"><div>'.h($label).'</div><div class="metric">—</div></div>';
-        return '<div class="card"><div>'.h($label).' net</div><div class="metric">£'.h(number_format($p['net_gbp'],2)).'</div></div>';
-    };
-    $cardsHtml = '<div class="grid">'
-        .$periodCard($periods['today'] ?? null, 'Today')
-        .$periodCard($periods['month'] ?? null, 'This month')
-        .$periodCard($periods['year'] ?? null, 'This year')
-        .'</div>';
+    $month = $periods['month'] ?? null;
+
+    if ($month !== null) {
+        $netClass = $month['net_gbp'] >= 0 ? 'positive' : 'negative';
+        $cardsHtml = '<div class="finance-grid">'
+            .'<div class="finance-card income"><div>Income this month</div><div class="metric positive">£'.h(number_format($month['earned_gbp'],2)).'</div><div class="sub">£'.h(number_format($month['earned_from_leads_gbp'],2)).' from leads · £'.h(number_format($month['earned_manual_gbp'],2)).' manual</div></div>'
+            .'<div class="finance-card expense"><div>Expenses this month</div><div class="metric negative">£'.h(number_format($month['expenses_gbp'],2)).'</div><div class="sub">₨'.h(number_format($month['expenses_pkr'],2)).' at locked rates</div></div>'
+            .'<div class="finance-card net"><div>Net this month</div><div class="metric '.$netClass.'">£'.h(number_format($month['net_gbp'],2)).'</div><div class="sub">Today: £'.h(number_format($periods['today']['net_gbp']??0,2)).' · This year: £'.h(number_format($periods['year']['net_gbp']??0,2)).'</div></div>'
+            .'</div>';
+    } else {
+        $cardsHtml = '<div class="finance-grid"><div class="finance-card"><div>Income</div><div class="metric">—</div></div><div class="finance-card"><div>Expenses</div><div class="metric">—</div></div><div class="finance-card"><div>Net</div><div class="metric">—</div></div></div>';
+    }
 
     $byCategoryTable = '<p style="color:var(--muted)">No expenses recorded yet.</p>';
-    if (!empty($periods['month']['by_category'])) {
+    if (!empty($month['by_category'])) {
         $rows = '';
-        foreach ($periods['month']['by_category'] as $row) {
-            $rows .= '<tr><td>'.h($row['category']).'</td><td>£'.h(number_format((float)$row['gbp'],2)).'</td><td>₨'.h(number_format((float)$row['pkr'],2)).'</td><td>'.h($row['count']).'</td></tr>';
+        foreach ($month['by_category'] as $row) {
+            $rows .= '<tr><td>'.h($row['category']).'</td><td class="amount-gbp">£'.h(number_format((float)$row['gbp'],2)).'</td><td class="amount-pkr">₨'.h(number_format((float)$row['pkr'],2)).'</td><td>'.h($row['count']).'</td></tr>';
         }
         $byCategoryTable = '<table><thead><tr><th>Category</th><th>GBP</th><th>PKR</th><th>Count</th></tr></thead><tbody>'.$rows.'</tbody></table>';
     }
 
     $expenseRows = '';
     foreach ($finance->listExpenses(50) as $e) {
-        $expenseRows .= '<tr><td>'.h($e['expense_date']).'</td><td>'.h($e['category_name']?:($e['category']?:'Uncategorised')).'</td><td>'.h($e['supplier']?:'—').'</td><td>£'.h(number_format((float)$e['amount'],2)).'</td><td>₨'.h(number_format((float)($e['converted_amount_pkr']??0),2)).'</td><td>'.h($e['description']?:'—').'</td></tr>';
+        $expenseRows .= '<tr><td>'.h($e['expense_date']).'</td><td>'.h($e['category_name']?:($e['category']?:'Uncategorised')).'</td><td>'.h($e['supplier']?:'—').'</td><td class="amount-gbp">£'.h(number_format((float)$e['amount'],2)).'</td><td class="amount-pkr">₨'.h(number_format((float)($e['converted_amount_pkr']??0),2)).'</td><td>'.h($e['description']?:'—').'</td></tr>';
     }
     $expenseTable = '<table><thead><tr><th>Date</th><th>Category</th><th>Payee</th><th>GBP</th><th>PKR</th><th>Note</th></tr></thead><tbody>'.($expenseRows?:'<tr><td colspan="6">No expenses yet.</td></tr>').'</tbody></table>';
 
     $incomeRows = '';
     foreach ($finance->listIncome(50) as $i) {
-        $incomeRows .= '<tr><td>'.h($i['received_at']).'</td><td>'.h(ucwords($i['source'])).'</td><td>£'.h(number_format((float)$i['amount_gbp'],2)).'</td><td>'.h($i['description']?:'—').'</td></tr>';
+        $incomeRows .= '<tr><td>'.h($i['received_at']).'</td><td>'.h(ucwords($i['source'])).'</td><td class="amount-gbp">£'.h(number_format((float)$i['amount_gbp'],2)).'</td><td>'.h($i['description']?:'—').'</td></tr>';
     }
     $incomeTable = '<table><thead><tr><th>Date</th><th>Source</th><th>GBP</th><th>Note</th></tr></thead><tbody>'.($incomeRows?:'<tr><td colspan="4">No manual income recorded yet.</td></tr>').'</tbody></table>';
 
-    $categoryList = '';
+    $categoryChips = '';
     foreach ($categories as $c) {
         $archiveBtn = (int)$c['is_default'] === 0
-            ? '<form method="post" action="/finance/category/'.(int)$c['id'].'/archive" style="display:inline"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><button style="background:#b42318">Archive</button></form>'
+            ? '<form method="post" action="/finance/category/'.(int)$c['id'].'/archive"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><button title="Archive">×</button></form>'
             : '';
-        $categoryList .= '<tr><td>'.h($c['name']).'</td><td>'.($c['is_default']?'Default':'Custom').'</td><td>'.$archiveBtn.'</td></tr>';
+        $chipClass = $c['is_default'] ? ' default' : '';
+        $categoryChips .= '<span class="chip'.$chipClass.'">'.h($c['name']).$archiveBtn.'</span>';
     }
 
     $notice = $summaryError ? '<p class="notice">Finance tables aren\'t set up yet — run <code>database/finance_v2_migration.sql</code> against the CRM database, then reload this page. ('.h($summaryError).')</p>' : '';
 
-    $body = '<h1>Finance</h1>'.$notice.$cardsHtml
+    $body = '<div class="toolbar"><div><h1>Finance</h1><p>Income and expenses across the business — Google Ads spend, payments, and manual income. Every expense locks its GBP→PKR rate at entry.</p></div></div>'
+        .$notice.$cardsHtml
         .'<h2>Expenses by category — this month</h2>'.$byCategoryTable
-        .'<h2>Add expense</h2><form class="form form-grid" method="post" action="/finance/expense/new"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><label>Category<select name="category_id">'.$categoryOptions.'</select></label><label>Payee<input name="payee"></label><label>Amount (GBP)<input type="number" step="0.01" name="amount_gbp" required></label><label>Date<input type="date" name="expense_date" value="'.h(date('Y-m-d')).'"></label><label>Note<input name="description"></label><div class="form-actions"><button>Add expense</button></div></form>'
+        .'<h2>Categories</h2><div class="chip-row">'.($categoryChips?:'<p style="color:var(--muted)">No categories yet.</p>').'</div>'
+        .'<form class="form form-grid" method="post" action="/finance/category/new" style="max-width:420px;margin-bottom:28px"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><label>New category<input name="name" required></label><div class="form-actions"><button>Add category</button></div></form>'
+        .'<div class="finance-cols">'
+            .'<form class="form form-grid" method="post" action="/finance/expense/new"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><div class="form-section">Add expense</div><label>Category<select name="category_id">'.$categoryOptions.'</select></label><label>Payee<input name="payee"></label><label>Amount (GBP)<input type="number" step="0.01" name="amount_gbp" required></label><label>Date<input type="date" name="expense_date" value="'.h(date('Y-m-d')).'"></label><label>Note<input name="description"></label><div class="form-actions"><button style="background:var(--brand)">Add expense</button></div></form>'
+            .'<form class="form form-grid" method="post" action="/finance/income/new"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><div class="form-section">Add income</div><label>Source<input name="source" value="manual"></label><label>Amount (GBP)<input type="number" step="0.01" name="amount_gbp" required></label><label>Date<input type="date" name="received_at" value="'.h(date('Y-m-d')).'"></label><label>Note<input name="description"></label><div class="form-actions"><button style="background:#0F7A3D">Add income</button></div></form>'
+        .'</div>'
         .'<h2>Recent expenses</h2>'.$expenseTable
-        .'<h2>Add income</h2><form class="form form-grid" method="post" action="/finance/income/new"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><label>Source<input name="source" value="manual"></label><label>Amount (GBP)<input type="number" step="0.01" name="amount_gbp" required></label><label>Date<input type="date" name="received_at" value="'.h(date('Y-m-d')).'"></label><label>Note<input name="description"></label><div class="form-actions"><button>Add income</button></div></form>'
-        .'<h2>Recent income</h2>'.$incomeTable
-        .'<h2>Categories</h2><table><thead><tr><th>Name</th><th>Type</th><th></th></tr></thead><tbody>'.($categoryList?:'<tr><td colspan="3">No categories yet.</td></tr>').'</tbody></table>'
-        .'<form class="form form-grid" method="post" action="/finance/category/new"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><label>New category name<input name="name" required></label><div class="form-actions"><button>Add category</button></div></form>';
+        .'<h2>Recent income</h2>'.$incomeTable;
 
     render('Finance', $body, $user);
 }
