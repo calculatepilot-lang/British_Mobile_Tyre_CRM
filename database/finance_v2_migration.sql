@@ -1,9 +1,19 @@
--- BMT CRM — Finance module v2 migration
--- Adds: user-definable expense categories, a proper income table (not just
--- lead-derived), GBP->PKR conversion fields locked at transaction time, and
--- an exchange-rate audit log. Safe to re-run — uses IF NOT EXISTS / seed
--- checks throughout. Run against the existing database:
---   mysql -u <user> -p <database> < database/finance_v2_migration.sql
+-- BMT CRM — Finance module v2 migration (revised)
+-- Run AFTER database/finance_migration.sql (v1), which creates the base
+-- `expenses` table this migration builds on.
+--
+-- v1's `expenses` table already has everything the finance model needs:
+-- amount, currency, exchange_rate_to_pkr, converted_amount_pkr,
+-- rate_locked_at, supplier. This migration does NOT rename or duplicate
+-- any of those — it only adds:
+--   1. expense_categories — user-definable categories (category_id FK)
+--   2. exchange_rate_log — permanent audit trail of every fetched rate
+--   3. income — a proper income table, independent of leads
+--   4. expenses.category_id — links each expense to expense_categories
+--
+-- Safe to re-run — uses IF NOT EXISTS / seed checks throughout.
+--   mysql -u <user> -p <database> < database/finance_migration.sql       (v1, if not already run)
+--   mysql -u <user> -p <database> < database/finance_v2_migration.sql    (this file)
 
 -- 1. User-definable expense categories (not hardcoded in PHP)
 CREATE TABLE IF NOT EXISTS expense_categories (
@@ -15,8 +25,6 @@ CREATE TABLE IF NOT EXISTS expense_categories (
     UNIQUE KEY uniq_category_name (name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- Seed the categories named explicitly in the spec — safe to run repeatedly,
--- duplicates are silently skipped by the unique key.
 INSERT IGNORE INTO expense_categories (name, is_default) VALUES
     ('Payment to Suhaib', 1),
     ('Payment to Faiz', 1),
@@ -25,8 +33,9 @@ INSERT IGNORE INTO expense_categories (name, is_default) VALUES
     ('Other', 1);
 
 -- 2. Exchange rate audit log — every rate ever fetched, kept permanently.
--- A transaction's own locked rate (below) is the source of truth for that
--- transaction; this table is the broader audit trail of rate history.
+-- Separate from v1's per-transaction exchange_rate_to_pkr/rate_locked_at
+-- (which record the rate a SPECIFIC expense locked); this table is the
+-- broader history of every rate the app has ever fetched.
 CREATE TABLE IF NOT EXISTS exchange_rate_log (
     id          INT AUTO_INCREMENT PRIMARY KEY,
     base_currency  VARCHAR(3) NOT NULL DEFAULT 'GBP',
@@ -38,11 +47,11 @@ CREATE TABLE IF NOT EXISTS exchange_rate_log (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- 3. Income table — money in, independent of the leads table so manual /
--- non-lead income can be recorded too. Existing lead-derived earnings
--- (leads.earned_gbp) are still counted separately in reporting.
+-- non-lead income can be recorded too. Lead-derived earnings (leads.earned_gbp,
+-- added by v1) are still counted separately in reporting.
 CREATE TABLE IF NOT EXISTS income (
     id           INT AUTO_INCREMENT PRIMARY KEY,
-    source       VARCHAR(40)  NOT NULL DEFAULT 'manual', -- 'manual' | 'lead' | 'other'
+    source       VARCHAR(40)  NOT NULL DEFAULT 'manual',
     lead_id      INT NULL,
     description  VARCHAR(255) NULL,
     amount_gbp   DECIMAL(12,2) NOT NULL,
@@ -51,20 +60,12 @@ CREATE TABLE IF NOT EXISTS income (
     created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- 4. Extend the existing `expenses` table with category + PKR conversion
--- fields. Uses IF NOT EXISTS (MySQL 8.0.29+ / MariaDB 10.5+) so this is
--- safe even if some of these columns were partially added before.
+-- 4. Link expenses to expense_categories, in addition to (not replacing)
+-- v1's free-text `category` VARCHAR column. `category` stays as-is for
+-- backward compatibility; category_id is the new structured link.
 ALTER TABLE expenses
-    ADD COLUMN IF NOT EXISTS category_id      INT NULL AFTER amount_gbp,
-    ADD COLUMN IF NOT EXISTS payee            VARCHAR(190) NULL AFTER category_id,
-    ADD COLUMN IF NOT EXISTS amount_pkr       DECIMAL(14,2) NULL AFTER amount_gbp,
-    ADD COLUMN IF NOT EXISTS exchange_rate    DECIMAL(14,6) NULL AFTER amount_pkr,
-    ADD COLUMN IF NOT EXISTS rate_locked_at   DATETIME NULL AFTER exchange_rate,
-    ADD COLUMN IF NOT EXISTS created_by       VARCHAR(190) NULL AFTER rate_locked_at,
-    ADD COLUMN IF NOT EXISTS created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP AFTER created_by;
+    ADD COLUMN IF NOT EXISTS category_id INT NULL AFTER category;
 
--- Add the FK only if it doesn't already exist (MySQL has no clean
--- "ADD CONSTRAINT IF NOT EXISTS" — this guards it manually).
 SET @fk_exists := (
     SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS
     WHERE CONSTRAINT_SCHEMA = DATABASE()

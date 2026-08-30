@@ -7,10 +7,15 @@ namespace BMT\Finance;
 use BMT\Database;
 
 /**
- * Write-side finance operations: categories, expenses (with the GBP->PKR
- * rate locked at creation time), and income. Read-side summaries stay in
- * FinanceSummaryService — this class is deliberately separate so summary
- * queries and mutating operations don't live in the same file.
+ * Write-side finance operations: categories, expenses, and income.
+ *
+ * Column names deliberately match the base `expenses` table created by
+ * database/finance_migration.sql (v1): amount, currency, exchange_rate_to_pkr,
+ * converted_amount_pkr, rate_locked_at, supplier — NOT the invented
+ * amount_gbp/amount_pkr/payee names from an earlier, incompatible draft of
+ * this service. Every expense is recorded with currency='GBP' since that's
+ * what the business actually pays in; converted_amount_pkr is the PKR value
+ * locked at entry time, for reference against the PKR-denominated Ads spend.
  */
 final class FinanceService
 {
@@ -48,10 +53,10 @@ final class FinanceService
     // ---- Expenses (money out) ---------------------------------------
 
     /**
-     * Creates an expense, fetching and locking the current GBP->PKR rate at
-     * the moment of creation. The locked rate and resulting PKR amount are
-     * stored permanently on the row — later exchange rate changes never
-     * retroactively alter a past transaction's recorded PKR value.
+     * Creates an expense in GBP, fetching and locking the current GBP->PKR
+     * rate at the moment of creation into the v1 columns exchange_rate_to_pkr /
+     * converted_amount_pkr / rate_locked_at. The locked rate never changes
+     * retroactively, even if the live rate moves later.
      */
     public function createExpense(array $data, ?string $createdBy = null): int
     {
@@ -61,20 +66,28 @@ final class FinanceService
         }
 
         $rate = $this->rates->currentRate();
-        $amountPkr = round($amountGbp * $rate, 2);
+        $convertedPkr = round($amountGbp * $rate, 2);
 
         $stmt = Database::connection()->prepare(
-            'INSERT INTO expenses (category_id, payee, description, amount_gbp, amount_pkr, exchange_rate, rate_locked_at, expense_date, created_by)
-             VALUES (:category_id, :payee, :description, :amount_gbp, :amount_pkr, :rate, NOW(), :expense_date, :created_by)'
+            'INSERT INTO expenses
+                (expense_date, category, category_id, description, amount, currency,
+                 exchange_rate_to_pkr, rate_source, rate_locked_at, converted_amount_pkr,
+                 supplier, created_by)
+             VALUES
+                (:expense_date, :category, :category_id, :description, :amount, \'GBP\',
+                 :rate, :rate_source, NOW(), :converted_pkr,
+                 :supplier, :created_by)'
         );
         $stmt->execute([
-            'category_id' => $data['category_id'] !== '' ? (int) $data['category_id'] : null,
-            'payee' => $data['payee'] ?? null,
-            'description' => $data['description'] ?? null,
-            'amount_gbp' => $amountGbp,
-            'amount_pkr' => $amountPkr,
-            'rate' => $rate,
             'expense_date' => $data['expense_date'] ?? date('Y-m-d'),
+            'category' => $data['category'] ?? 'Uncategorised',
+            'category_id' => $data['category_id'] !== '' ? (int) $data['category_id'] : null,
+            'description' => $data['description'] ?? null,
+            'amount' => $amountGbp,
+            'rate' => $rate,
+            'rate_source' => 'open.er-api.com',
+            'converted_pkr' => $convertedPkr,
+            'supplier' => $data['payee'] ?? null,
             'created_by' => $createdBy,
         ]);
 

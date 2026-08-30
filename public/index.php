@@ -276,7 +276,7 @@ if ($path === '/finance') {
 
     $expenseRows = '';
     foreach ($finance->listExpenses(50) as $e) {
-        $expenseRows .= '<tr><td>'.h($e['expense_date']).'</td><td>'.h($e['category_name']?:'Uncategorised').'</td><td>'.h($e['payee']?:'—').'</td><td>£'.h(number_format((float)$e['amount_gbp'],2)).'</td><td>₨'.h(number_format((float)($e['amount_pkr']??0),2)).'</td><td>'.h($e['description']?:'—').'</td></tr>';
+        $expenseRows .= '<tr><td>'.h($e['expense_date']).'</td><td>'.h($e['category_name']?:($e['category']?:'Uncategorised')).'</td><td>'.h($e['supplier']?:'—').'</td><td>£'.h(number_format((float)$e['amount'],2)).'</td><td>₨'.h(number_format((float)($e['converted_amount_pkr']??0),2)).'</td><td>'.h($e['description']?:'—').'</td></tr>';
     }
     $expenseTable = '<table><thead><tr><th>Date</th><th>Category</th><th>Payee</th><th>GBP</th><th>PKR</th><th>Note</th></tr></thead><tbody>'.($expenseRows?:'<tr><td colspan="6">No expenses yet.</td></tr>').'</tbody></table>';
 

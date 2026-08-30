@@ -8,16 +8,15 @@ use DateTimeImmutable;
 use DateTimeZone;
 use PDO;
 
+/**
+ * Reads use the real v1 expenses schema: amount (GBP, since every expense
+ * is now recorded with currency='GBP'), converted_amount_pkr (locked at
+ * entry time — never recomputed at today's rate).
+ */
 final class FinanceSummaryService
 {
     public function __construct(private Database $database) {}
 
-    /**
-     * GBP totals as before, PLUS pkr_expenses (summed from each expense's
-     * own locked amount_pkr — never recomputed at today's rate, since the
-     * whole point of locking is that a June transaction stays at June's
-     * rate forever, even if you run this report in December).
-     */
     public function summary(string $from, string $to): array
     {
         $pdo = $this->database->pdo();
@@ -32,14 +31,18 @@ final class FinanceSummaryService
 
         $income = $leadIncome + $manual;
 
-        $expense = $pdo->prepare("SELECT COALESCE(SUM(amount_gbp),0), COALESCE(SUM(amount_pkr),0) FROM expenses WHERE expense_date BETWEEN :from AND :to");
+        $expense = $pdo->prepare(
+            "SELECT COALESCE(SUM(amount),0), COALESCE(SUM(converted_amount_pkr),0)
+             FROM expenses WHERE currency = 'GBP' AND expense_date BETWEEN :from AND :to"
+        );
         $expense->execute(['from'=>$from, 'to'=>$to]);
         [$outgoingsGbp, $outgoingsPkr] = $expense->fetch(PDO::FETCH_NUM);
 
         $byCategory = $pdo->prepare(
-            "SELECT COALESCE(c.name, 'Uncategorised') AS category, SUM(e.amount_gbp) AS gbp, SUM(e.amount_pkr) AS pkr, COUNT(*) AS count
+            "SELECT COALESCE(c.name, e.category, 'Uncategorised') AS category,
+                    SUM(e.amount) AS gbp, SUM(e.converted_amount_pkr) AS pkr, COUNT(*) AS count
              FROM expenses e LEFT JOIN expense_categories c ON c.id = e.category_id
-             WHERE e.expense_date BETWEEN :from AND :to
+             WHERE e.currency = 'GBP' AND e.expense_date BETWEEN :from AND :to
              GROUP BY category ORDER BY gbp DESC"
         );
         $byCategory->execute(['from'=>$from, 'to'=>$to]);
