@@ -2,7 +2,9 @@
 
 ## Current mode
 
-The campaign planner is **plan_only**. It does not call a Google Ads mutate service.
+The planner itself (`CampaignPlanner`) is still **plan_only** — it never calls a Google Ads mutate service, only proposes campaigns via the approval workflow.
+
+Execution is now possible, but scoped: `ChangeExecutor::createCampaignSkeleton()` (used from `/changes` or the `execute-conversion-actions`-style cron pattern) creates the campaign **skeleton** once a proposal is approved — a budget, the campaign itself (always created **PAUSED**), one empty ad group, and 15km proximity location targeting around the city's planning centre. It does not add keywords, ads, or negative keywords, and it never switches a campaign to ENABLED — a human finishes those steps in the Google Ads UI and enables it only when satisfied. This mirrors the same approval-then-execute pattern already used for conversion actions, with an extra safety margin: even after execution, the campaign cannot spend anything until a human takes one more manual action.
 
 ## Markets
 

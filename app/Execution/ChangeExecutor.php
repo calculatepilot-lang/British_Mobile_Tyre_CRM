@@ -10,15 +10,30 @@ use Google\Ads\GoogleAds\V25\Enums\ConversionActionCategoryEnum\ConversionAction
 use Google\Ads\GoogleAds\V25\Enums\ConversionActionStatusEnum\ConversionActionStatus;
 use Google\Ads\GoogleAds\V25\Enums\ConversionActionTypeEnum\ConversionActionType;
 use Google\Ads\GoogleAds\V25\Enums\CampaignStatusEnum\CampaignStatus;
+use Google\Ads\GoogleAds\V25\Enums\AdvertisingChannelTypeEnum\AdvertisingChannelType;
+use Google\Ads\GoogleAds\V25\Enums\BudgetDeliveryMethodEnum\BudgetDeliveryMethod;
+use Google\Ads\GoogleAds\V25\Enums\AdGroupStatusEnum\AdGroupStatus;
+use Google\Ads\GoogleAds\V25\Enums\AdGroupTypeEnum\AdGroupType;
+use Google\Ads\GoogleAds\V25\Enums\ProximityRadiusUnitsEnum\ProximityRadiusUnits;
+use Google\Ads\GoogleAds\V25\Common\ManualCpc;
+use Google\Ads\GoogleAds\V25\Common\ProximityInfo;
+use Google\Ads\GoogleAds\V25\Common\GeoPointInfo;
 use Google\Ads\GoogleAds\V25\Resources\ConversionAction;
 use Google\Ads\GoogleAds\V25\Resources\Campaign;
+use Google\Ads\GoogleAds\V25\Resources\Campaign\NetworkSettings;
 use Google\Ads\GoogleAds\V25\Resources\CampaignBudget;
+use Google\Ads\GoogleAds\V25\Resources\AdGroup;
+use Google\Ads\GoogleAds\V25\Resources\CampaignCriterion;
 use Google\Ads\GoogleAds\V25\Services\ConversionActionOperation;
 use Google\Ads\GoogleAds\V25\Services\CampaignOperation;
 use Google\Ads\GoogleAds\V25\Services\CampaignBudgetOperation;
+use Google\Ads\GoogleAds\V25\Services\AdGroupOperation;
+use Google\Ads\GoogleAds\V25\Services\CampaignCriterionOperation;
 use Google\Ads\GoogleAds\V25\Services\MutateConversionActionsRequest;
 use Google\Ads\GoogleAds\V25\Services\MutateCampaignsRequest;
 use Google\Ads\GoogleAds\V25\Services\MutateCampaignBudgetsRequest;
+use Google\Ads\GoogleAds\V25\Services\MutateAdGroupsRequest;
+use Google\Ads\GoogleAds\V25\Services\MutateCampaignCriteriaRequest;
 use Google\Ads\GoogleAds\V25\Services\SearchGoogleAdsRequest;
 use Google\Protobuf\FieldMask;
 use RuntimeException;
@@ -29,14 +44,16 @@ use Throwable;
  * live Google Ads account. This is the only class in the codebase that
  * performs a write against Google Ads — every other module only proposes.
  *
- * Deliberately does NOT implement 'create_campaign'. Creating a Search
- * campaign well (ad groups, keywords, ads, location targets, negative
- * keywords, network settings) is a materially larger and higher-risk
- * operation than the single-resource mutations below, and a misconfigured
- * auto-created campaign can waste real budget before anyone notices.
- * campaign proposals are surfaced on /changes for manual creation using
- * their after_state as a spec, until a reviewed campaign-creation flow is
- * built and tested against a real account.
+ * 'create_campaign' creates the campaign SKELETON only — budget, campaign
+ * (always PAUSED), one default ad group, and proximity location targeting
+ * around the city's planning centre. It deliberately does NOT add keywords,
+ * ads, or negative keywords: keyword/ad copy quality is a judgment call a
+ * human should make per city, and config/vehicle_policy.php explicitly sets
+ * automatic_negative_application=false, so applying negatives automatically
+ * here would contradict that policy. A campaign this method creates cannot
+ * spend a penny until a human adds ads/keywords AND manually switches it to
+ * ENABLED in the Google Ads UI — the PAUSED status is never changed by any
+ * code path in this class.
  */
 final class ChangeExecutor
 {
@@ -73,6 +90,7 @@ final class ChangeExecutor
             try {
                 $before = match ($change['change_type']) {
                     'create_conversion_action' => $this->createConversionAction($change),
+                    'create_campaign' => $this->createCampaignSkeleton($change),
                     'increase_budget', 'decrease_budget' => $this->changeBudget($change),
                     'pause_campaign' => $this->pauseCampaign($change),
                     default => null,
@@ -112,15 +130,11 @@ final class ChangeExecutor
             try {
                 $before = match ($change['change_type']) {
                     'create_conversion_action' => $this->createConversionAction($change),
+                    'create_campaign' => $this->createCampaignSkeleton($change),
                     'increase_budget', 'decrease_budget' => $this->changeBudget($change),
                     'pause_campaign' => $this->pauseCampaign($change),
                     default => null,
                 };
-
-                if ($before === null && $change['change_type'] === 'create_campaign') {
-                    $result['skipped'][] = $uuid;
-                    continue;
-                }
 
                 if ($before === null) {
                     $this->approvals->markFailed($uuid, 'Unknown change_type: ' . $change['change_type']);
@@ -164,6 +178,136 @@ final class ChangeExecutor
         $resourceName = $response->getResults()[0]->getResourceName();
 
         return ['resource_id' => $resourceName, 'action' => 'created', 'previous_state' => null];
+    }
+
+    /**
+     * Creates a Search campaign SKELETON from a CampaignPlanner proposal:
+     * a budget, the campaign itself (always PAUSED — see class docblock),
+     * one default ad group, and proximity-based location targeting around
+     * the city's planning centre. No keywords, ads, or negative keywords
+     * are added — a human finishes those in the Google Ads UI and switches
+     * the campaign to ENABLED only once they're satisfied with it.
+     *
+     * Proximity radius is a flat 15km around the city centre point rather
+     * than any invented road/motorway geometry — config/cities.php is
+     * explicit that road corridors must be independently verified before
+     * use, and this method has no way to verify them, so it doesn't attempt to.
+     */
+    private function createCampaignSkeleton(array $change): array
+    {
+        $after = json_decode((string) $change['after_state'], true, 512, JSON_THROW_ON_ERROR);
+        $client = Client::make();
+        $customerId = Client::customerId();
+
+        $campaignName = (string) ($after['campaign_name'] ?? $change['resource_name']);
+        $dailyBudget = (float) ($after['suggested_daily_budget'] ?? 0);
+        if ($dailyBudget <= 0) {
+            throw new RuntimeException('Cannot create campaign "' . $campaignName . '" — no positive suggested_daily_budget on the proposal.');
+        }
+        $lat = $after['planning_centre']['lat'] ?? null;
+        $lng = $after['planning_centre']['lng'] ?? null;
+        if ($lat === null || $lng === null) {
+            throw new RuntimeException('Cannot create campaign "' . $campaignName . '" — proposal is missing a planning_centre lat/lng.');
+        }
+
+        // 1. Budget — never shared, standard delivery, amount in the
+        // account's own currency (PKR), matching how suggested_daily_budget
+        // was computed by CampaignPlanner.
+        $budgetService = $client->getCampaignBudgetServiceClient();
+        $budget = new CampaignBudget([
+            'name' => $campaignName . ' - Budget - ' . bin2hex(random_bytes(4)),
+            'amount_micros' => (int) round($dailyBudget * 1_000_000),
+            'delivery_method' => BudgetDeliveryMethod::STANDARD,
+            'explicitly_shared' => false,
+        ]);
+        $budgetOperation = new CampaignBudgetOperation();
+        $budgetOperation->setCreate($budget);
+        $budgetResponse = $budgetService->mutateCampaignBudgets(new MutateCampaignBudgetsRequest([
+            'customer_id' => (string) $customerId,
+            'operations' => [$budgetOperation],
+        ]));
+        $budgetResourceName = $budgetResponse->getResults()[0]->getResourceName();
+
+        // 2. Campaign — always PAUSED. Manual CPC to match this account's
+        // existing bidding approach (see /areas notes: Manual CPC is the
+        // primary acquisition channel). Search-only network settings —
+        // never the wider Display/Search-partner network by default.
+        $campaignService = $client->getCampaignServiceClient();
+        $campaign = new Campaign([
+            'name' => $campaignName,
+            'status' => CampaignStatus::PAUSED,
+            'advertising_channel_type' => AdvertisingChannelType::SEARCH,
+            'campaign_budget' => $budgetResourceName,
+            'manual_cpc' => new ManualCpc(),
+            'network_settings' => new NetworkSettings([
+                'target_google_search' => true,
+                'target_search_network' => false,
+                'target_content_network' => false,
+                'target_partner_search_network' => false,
+            ]),
+        ]);
+        $campaignOperation = new CampaignOperation();
+        $campaignOperation->setCreate($campaign);
+        $campaignResponse = $campaignService->mutateCampaigns(new MutateCampaignsRequest([
+            'customer_id' => (string) $customerId,
+            'operations' => [$campaignOperation],
+        ]));
+        $campaignResourceName = $campaignResponse->getResults()[0]->getResourceName();
+
+        // 3. One default ad group — empty of keywords/ads. Human adds those.
+        $adGroupService = $client->getAdGroupServiceClient();
+        $adGroup = new AdGroup([
+            'name' => $campaignName . ' - General',
+            'campaign' => $campaignResourceName,
+            'status' => AdGroupStatus::ENABLED, // harmless while the campaign itself is PAUSED
+            'type' => AdGroupType::SEARCH_STANDARD,
+        ]);
+        $adGroupOperation = new AdGroupOperation();
+        $adGroupOperation->setCreate($adGroup);
+        $adGroupResponse = $adGroupService->mutateAdGroups(new MutateAdGroupsRequest([
+            'customer_id' => (string) $customerId,
+            'operations' => [$adGroupOperation],
+        ]));
+        $adGroupResourceName = $adGroupResponse->getResults()[0]->getResourceName();
+
+        // 4. Proximity location targeting — campaign-level criterion, flat
+        // 15km radius around the verified city centre point.
+        $criterionService = $client->getCampaignCriterionServiceClient();
+        $criterion = new CampaignCriterion([
+            'campaign' => $campaignResourceName,
+            'proximity' => new ProximityInfo([
+                'geo_point' => new GeoPointInfo([
+                    'latitude_in_micro_degrees' => (int) round(((float) $lat) * 1_000_000),
+                    'longitude_in_micro_degrees' => (int) round(((float) $lng) * 1_000_000),
+                ]),
+                'radius' => 15,
+                'radius_units' => ProximityRadiusUnits::KILOMETERS,
+            ]),
+        ]);
+        $criterionOperation = new CampaignCriterionOperation();
+        $criterionOperation->setCreate($criterion);
+        $criterionService->mutateCampaignCriteria(new MutateCampaignCriteriaRequest([
+            'customer_id' => (string) $customerId,
+            'operations' => [$criterionOperation],
+        ]));
+
+        return [
+            'resource_id' => $campaignResourceName,
+            'action' => 'campaign_skeleton_created',
+            'previous_state' => null,
+            'created' => [
+                'campaign' => $campaignResourceName,
+                'budget' => $budgetResourceName,
+                'ad_group' => $adGroupResourceName,
+                'status' => 'PAUSED',
+            ],
+            'still_needed_before_enabling' => [
+                'Add keywords to the ad group.',
+                'Add at least one responsive search ad.',
+                'Review and add negative keywords (see config/vehicle_policy.php negative_keyword_candidates — not applied automatically).',
+                'Switch campaign status to ENABLED in the Google Ads UI once satisfied.',
+            ],
+        ];
     }
 
     /**
