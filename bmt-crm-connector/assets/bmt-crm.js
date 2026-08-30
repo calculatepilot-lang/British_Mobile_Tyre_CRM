@@ -27,7 +27,9 @@
         city: value(form, ['city','town']),
         postcode: value(form, ['postcode','post_code','postal_code']),
         tyresize: value(form, ['tyresize','tyre_size','tyre-size']),
-        vehicle_registration: value(form, ['vehicle_registration','registration','vehicle_reg','reg'])
+        vehicle_registration: value(form, ['vehicle_registration','registration','vehicle_reg','reg']),
+        source_page_url: window.location.href,
+        source_page_label: document.title
       },
       attribution: attribution()
     };
