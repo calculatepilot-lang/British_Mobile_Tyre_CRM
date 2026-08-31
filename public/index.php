@@ -48,18 +48,21 @@ function leadDisplayName(array $lead): string {
  * those fields, matching the business's own default assumption.
  */
 function leadWhatsAppMessage(array $lead): string {
-    $postcode = trim((string) ($lead['postcode'] ?? '')) ?: '—';
+    $postcode = trim((string) ($lead['postcode'] ?? ''));
     $tyreSize = trim((string) ($lead['tyre_size'] ?? '')) ?: '—';
     $lockingNut = ucfirst((string) ($lead['locking_nut'] ?? 'yes'));
     $vehicleType = \BMT\Leads\LeadService::vehicleTypeLabel($lead['vehicle_type'] ?? null) ?: 'Car';
+    $mapsUrl = $postcode !== ''
+        ? 'https://www.google.com/maps/search/?api=1&query=' . rawurlencode($postcode)
+        : 'https://www.google.com/maps';
 
     return "*Live Tyre Job*\n"
         . "Need Tyre Repair \n"
-        . "*Location:* {$postcode}\n"
+        . "*Location:* " . ($postcode !== '' ? $postcode : '—') . "\n"
         . "*Tyre Size:* {$tyreSize}\n"
         . "*Locking Nut:* {$lockingNut}\n"
         . "*Vehicle Type:* {$vehicleType}\n"
-        . "https://maps.app.goo.gl/KxtaEiqoGn8W2Kkv5?g_st=ac\n"
+        . "{$mapsUrl}\n"
         . "*Please quote price and ETA. Thanks!*\n"
         . "*© British Mobile Tyre*";
 }
