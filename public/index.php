@@ -51,7 +51,7 @@ function leadWhatsAppMessage(array $lead): string {
     $postcode = trim((string) ($lead['postcode'] ?? '')) ?: '—';
     $tyreSize = trim((string) ($lead['tyre_size'] ?? '')) ?: '—';
     $lockingNut = ucfirst((string) ($lead['locking_nut'] ?? 'yes'));
-    $vehicleType = (string) ($lead['vehicle_type'] ?? '') ?: 'Car';
+    $vehicleType = \BMT\Leads\LeadService::vehicleTypeLabel($lead['vehicle_type'] ?? null) ?: 'Car';
 
     return "*Live Tyre Job*\n"
         . "Need Tyre Repair \n"
@@ -245,7 +245,7 @@ if ($path === '/leads/new' && $method === 'POST') {
 }
 if ($path === '/leads/new') {
     $types=''; foreach(['phone'=>'Phone','whatsapp'=>'WhatsApp','form'=>'Form','purchase'=>'Purchase','other'=>'Other'] as $v=>$label) $types.='<option value="'.h($v).'">'.h($label).'</option>';
-    $vehicleOptions=''; foreach(['Car','Van','Caravan','Bus','Lorry','Trailer'] as $v) $vehicleOptions.='<option value="'.h($v).'">'.h($v).'</option>';
+    $vehicleOptions=''; foreach(['car'=>'Car','van'=>'Van','caravan'=>'Caravan','bus'=>'Bus','truck'=>'Lorry','trailer'=>'Trailer'] as $v=>$label) $vehicleOptions.='<option value="'.h($v).'">'.h($label).'</option>';
     $body='<h1>Add lead</h1><form class="form form-grid" method="post"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><div class="form-section">Lead details</div><label>Lead type<select name="lead_type" required>'.$types.'</select></label><label>Source<input name="source" value="manual"></label><label>Customer name<input name="customer_name"></label><label>Phone<input name="customer_phone"></label><label>Email<input type="email" name="customer_email"></label><label>Service requested<input name="service_requested"></label><label>Tyre size<input name="tyre_size" placeholder="e.g. 205/55 R16"></label><label>Vehicle registration<input name="vehicle_registration" placeholder="e.g. AB12 CDE"></label><label>Locking nut<select name="locking_nut"><option value="">Unknown</option><option value="yes">Yes</option><option value="no">No</option></select></label><label>Vehicle type<select name="vehicle_type"><option value="">Unknown</option>'.$vehicleOptions.'</select></label><label>City<input name="city"></label><label>Postcode<input name="postcode"></label><div class="form-section">Google Ads attribution (optional)</div><label>GCLID<input name="gclid"></label><label>GBRAID<input name="gbraid"></label><label>WBRAID<input name="wbraid"></label><label>UTM source<input name="utm_source"></label><label>UTM medium<input name="utm_medium"></label><label>UTM campaign<input name="utm_campaign"></label><div class="form-actions"><button>Create lead</button></div></form>';
     render('Add lead', $body, $user);
 }
@@ -260,7 +260,7 @@ if (preg_match('#^/leads/([^/]+)$#', $path, $m)) {
     $statuses=''; foreach(['new','contacted','qualified','quoted','booked','completed','lost','spam','duplicate','existing_customer'] as $s) $statuses.='<option value="'.h($s).'"'.($lead['status']===$s?' selected':'').'>'.h(ucwords(str_replace('_',' ',$s))).'</option>';
     $fields=['customer_name'=>'Customer name','customer_phone'=>'Phone','customer_email'=>'Email','service_requested'=>'Service requested','tyre_size'=>'Tyre size','vehicle_registration'=>'Vehicle registration','city'=>'City','postcode'=>'Postcode','source_page_label'=>'Source page','quoted_amount'=>'Quoted amount','final_revenue'=>'Final revenue','quality_score'=>'Quality score 0-100','outcome_reason'=>'Outcome reason'];
     $inputs=''; foreach($fields as $key=>$label){$type=in_array($key,['quoted_amount','final_revenue','quality_score'],true)?'number':'text';$step=in_array($key,['quoted_amount','final_revenue'],true)?' step="0.01"':'';$min=$key==='quality_score'?' min="0" max="100"':'';$inputs.='<label>'.h($label).'<input type="'.$type.'"'.$step.$min.' name="'.h($key).'" value="'.h($lead[$key]??'').'"></label>';}
-    $vehicleOptions=''; foreach(['Car','Van','Caravan','Bus','Lorry','Trailer'] as $v) $vehicleOptions.='<option value="'.h($v).'"'.($lead['vehicle_type']===$v?' selected':'').'>'.h($v).'</option>';
+    $vehicleOptions=''; foreach(['car'=>'Car','van'=>'Van','caravan'=>'Caravan','bus'=>'Bus','truck'=>'Lorry','trailer'=>'Trailer'] as $v=>$label) $vehicleOptions.='<option value="'.h($v).'"'.($lead['vehicle_type']===$v?' selected':'').'>'.h($label).'</option>';
     $inputs .= '<label>Locking nut<select name="locking_nut"><option value="">Unknown</option><option value="yes"'.(($lead['locking_nut']??'')==='yes'?' selected':'').'>Yes</option><option value="no"'.(($lead['locking_nut']??'')==='no'?' selected':'').'>No</option></select></label>';
     $inputs .= '<label>Vehicle type<select name="vehicle_type"><option value="">Unknown</option>'.$vehicleOptions.'</select></label>';
     if (!empty($lead['source_page_url'])) {

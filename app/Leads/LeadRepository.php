@@ -44,7 +44,7 @@ final class LeadRepository
 
             $stmt = $pdo->prepare('UPDATE leads SET status = :status, customer_name = :customer_name, customer_phone = :customer_phone, customer_email = :customer_email, service_requested = :service_requested, tyre_size = :tyre_size, vehicle_registration = :vehicle_registration, locking_nut = :locking_nut, vehicle_type = :vehicle_type, city = :city, postcode = :postcode, quoted_amount = :quoted_amount, final_revenue = :final_revenue, outcome_reason = :outcome_reason, remarks = :remarks, quality_score = :quality_score WHERE public_id = :public_id');
             $lockingNut = strtolower(trim((string) ($data['locking_nut'] ?? '')));
-            $vehicleType = trim((string) ($data['vehicle_type'] ?? ''));
+            $vehicleType = \BMT\Leads\LeadService::normaliseVehicleType($data['vehicle_type'] ?? null);
             $stmt->execute([
                 'status' => $status,
                 'customer_name' => $data['customer_name'] ?: null,
@@ -54,7 +54,7 @@ final class LeadRepository
                 'tyre_size' => $data['tyre_size'] ?: null,
                 'vehicle_registration' => $data['vehicle_registration'] ?: null,
                 'locking_nut' => in_array($lockingNut, ['yes', 'no'], true) ? $lockingNut : null,
-                'vehicle_type' => in_array($vehicleType, ['Car', 'Van', 'Caravan', 'Bus', 'Lorry', 'Trailer'], true) ? $vehicleType : null,
+                'vehicle_type' => $vehicleType,
                 'city' => $data['city'] ?: null,
                 'postcode' => $data['postcode'] ?: null,
                 'quoted_amount' => $this->decimal($data['quoted_amount'] ?? null),

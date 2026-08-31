@@ -50,14 +50,26 @@ final class LeadService
         return in_array($v, ['yes', 'no'], true) ? $v : null;
     }
 
-    private function normaliseVehicleType(mixed $value): ?string
+    /**
+     * vehicle_type is an existing column (predates this feature) used by
+     * LeadQualityReport for by-vehicle-type analytics — its enum is
+     * lowercase and uses 'truck', not 'lorry'. "Lorry" is accepted here as
+     * the user-facing label (matching how the business actually refers to
+     * it) but stored as 'truck' to stay consistent with that existing
+     * reporting rather than fragmenting the data across two spellings.
+     */
+    public static function normaliseVehicleType(mixed $value): ?string
     {
-        $allowed = ['Car', 'Van', 'Caravan', 'Bus', 'Lorry', 'Trailer'];
-        $v = trim((string) ($value ?? ''));
-        foreach ($allowed as $a) {
-            if (strcasecmp($a, $v) === 0) return $a;
-        }
-        return null;
+        $aliases = ['car' => 'car', 'van' => 'van', 'caravan' => 'caravan', 'bus' => 'bus', 'truck' => 'truck', 'lorry' => 'truck', 'trailer' => 'trailer'];
+        $v = strtolower(trim((string) ($value ?? '')));
+        return $aliases[$v] ?? null;
+    }
+
+    /** Human-facing label for a stored vehicle_type value — 'truck' displays as "Lorry" everywhere a person sees it. */
+    public static function vehicleTypeLabel(?string $value): string
+    {
+        $labels = ['car' => 'Car', 'van' => 'Van', 'caravan' => 'Caravan', 'bus' => 'Bus', 'truck' => 'Lorry', 'trailer' => 'Trailer'];
+        return $labels[strtolower(trim((string) $value))] ?? '';
     }
 
     public function create(array $lead, array $attribution = []): string

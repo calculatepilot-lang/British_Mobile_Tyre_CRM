@@ -12,6 +12,14 @@ ALTER TABLE leads
     ADD COLUMN IF NOT EXISTS source_page_label VARCHAR(160) NULL AFTER source_page_url;
 
 -- Locking nut and vehicle type — captured from the enquiry form.
+-- vehicle_type already existed (from the Google Ads vehicle-eligibility
+-- policy work) as ENUM('car','van','caravan','bus','truck','trailer') —
+-- lowercase, and 'truck' rather than 'lorry'. This IF NOT EXISTS is a
+-- documented no-op for vehicle_type on a database that already has it;
+-- app code maps the user-facing "Lorry" label to the existing 'truck'
+-- value (LeadService::normaliseVehicleType/vehicleTypeLabel) rather than
+-- fragmenting the data across two spellings, since LeadQualityReport's
+-- by-vehicle-type analytics already depend on the existing values.
 ALTER TABLE leads
     ADD COLUMN IF NOT EXISTS locking_nut ENUM('yes','no') NULL AFTER vehicle_registration,
-    ADD COLUMN IF NOT EXISTS vehicle_type ENUM('Car','Van','Caravan','Bus','Lorry','Trailer') NULL AFTER locking_nut;
+    ADD COLUMN IF NOT EXISTS vehicle_type ENUM('car','van','caravan','bus','truck','trailer') NULL AFTER locking_nut;
