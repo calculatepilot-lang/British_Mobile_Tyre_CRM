@@ -41,6 +41,29 @@ function leadDisplayName(array $lead): string {
     return $name !== '' ? $name : 'Customer #' . (int) ($lead['id'] ?? 0);
 }
 
+/**
+ * Builds the standard WhatsApp quote-request message for a lead, using its
+ * captured postcode/tyre size/locking nut/vehicle type — falling back to
+ * "Yes"/"Car" for locking nut and vehicle type on older leads that predate
+ * those fields, matching the business's own default assumption.
+ */
+function leadWhatsAppMessage(array $lead): string {
+    $postcode = trim((string) ($lead['postcode'] ?? '')) ?: '—';
+    $tyreSize = trim((string) ($lead['tyre_size'] ?? '')) ?: '—';
+    $lockingNut = ucfirst((string) ($lead['locking_nut'] ?? 'yes'));
+    $vehicleType = (string) ($lead['vehicle_type'] ?? '') ?: 'Car';
+
+    return "*Live Tyre Job*\n"
+        . "Need Tyre Repair \n"
+        . "*Location:* {$postcode}\n"
+        . "*Tyre Size:* {$tyreSize}\n"
+        . "*Locking Nut:* {$lockingNut}\n"
+        . "*Vehicle Type:* {$vehicleType}\n"
+        . "https://maps.app.goo.gl/KxtaEiqoGn8W2Kkv5?g_st=ac\n"
+        . "*Please quote price and ETA. Thanks!*\n"
+        . "*© British Mobile Tyre*";
+}
+
 /** Strips a phone number down to a wa.me-compatible digit string, assuming UK numbers (leading 0 -> 44). */
 function phoneToWhatsAppDigits(string $phone): string {
     $digits = preg_replace('/\D+/', '', $phone) ?? '';
@@ -168,6 +191,8 @@ label{font-size:13px;font-weight:650;color:var(--text)}
 .chip button:hover{background:#FBEAEA!important;color:var(--brand)!important}
 .amount-gbp{font-weight:700;color:var(--text)}
 .amount-pkr{font-size:12px;color:var(--muted)}
+.copy-lead-btn{background:var(--surface);color:var(--text);border:1.5px solid var(--border);border-radius:8px;padding:6px 10px;font-size:12.5px;font-weight:600;cursor:pointer;white-space:nowrap}
+.copy-lead-btn:hover{background:#EAF1FF;border-color:#C9DBFF}
 @media(max-width:760px){aside{width:auto;flex:none;padding:14px}.layout{display:block}.content{padding:18px}aside nav{flex-direction:row;flex-wrap:wrap}}
 </style></head><body>' . ($user
         ? '<div class="layout">' . $nav . '<main class="content">' . $body . '</main></div>'
@@ -213,13 +238,15 @@ if ($path === '/leads/new' && $method === 'POST') {
         'lead_type' => $_POST['lead_type'] ?? '', 'source' => $_POST['source'] ?? 'manual', 'customer_name' => $_POST['customer_name'] ?? null,
         'customer_phone' => $_POST['customer_phone'] ?? null, 'customer_email' => $_POST['customer_email'] ?? null,
         'service_requested' => $_POST['service_requested'] ?? null, 'tyre_size' => $_POST['tyre_size'] ?? null, 'vehicle_registration' => $_POST['vehicle_registration'] ?? null,
+        'locking_nut' => $_POST['locking_nut'] ?? null, 'vehicle_type' => $_POST['vehicle_type'] ?? null,
         'city' => $_POST['city'] ?? null, 'postcode' => $_POST['postcode'] ?? null,
     ], ['gclid'=>$_POST['gclid'] ?? null, 'gbraid'=>$_POST['gbraid'] ?? null, 'wbraid'=>$_POST['wbraid'] ?? null, 'utm_source'=>$_POST['utm_source'] ?? null, 'utm_medium'=>$_POST['utm_medium'] ?? null, 'utm_campaign'=>$_POST['utm_campaign'] ?? null]);
     redirect('/leads/' . rawurlencode($publicId));
 }
 if ($path === '/leads/new') {
     $types=''; foreach(['phone'=>'Phone','whatsapp'=>'WhatsApp','form'=>'Form','purchase'=>'Purchase','other'=>'Other'] as $v=>$label) $types.='<option value="'.h($v).'">'.h($label).'</option>';
-    $body='<h1>Add lead</h1><form class="form form-grid" method="post"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><div class="form-section">Lead details</div><label>Lead type<select name="lead_type" required>'.$types.'</select></label><label>Source<input name="source" value="manual"></label><label>Customer name<input name="customer_name"></label><label>Phone<input name="customer_phone"></label><label>Email<input type="email" name="customer_email"></label><label>Service requested<input name="service_requested"></label><label>Tyre size<input name="tyre_size" placeholder="e.g. 205/55 R16"></label><label>Vehicle registration<input name="vehicle_registration" placeholder="e.g. AB12 CDE"></label><label>City<input name="city"></label><label>Postcode<input name="postcode"></label><div class="form-section">Google Ads attribution (optional)</div><label>GCLID<input name="gclid"></label><label>GBRAID<input name="gbraid"></label><label>WBRAID<input name="wbraid"></label><label>UTM source<input name="utm_source"></label><label>UTM medium<input name="utm_medium"></label><label>UTM campaign<input name="utm_campaign"></label><div class="form-actions"><button>Create lead</button></div></form>';
+    $vehicleOptions=''; foreach(['Car','Van','Caravan','Bus','Lorry','Trailer'] as $v) $vehicleOptions.='<option value="'.h($v).'">'.h($v).'</option>';
+    $body='<h1>Add lead</h1><form class="form form-grid" method="post"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><div class="form-section">Lead details</div><label>Lead type<select name="lead_type" required>'.$types.'</select></label><label>Source<input name="source" value="manual"></label><label>Customer name<input name="customer_name"></label><label>Phone<input name="customer_phone"></label><label>Email<input type="email" name="customer_email"></label><label>Service requested<input name="service_requested"></label><label>Tyre size<input name="tyre_size" placeholder="e.g. 205/55 R16"></label><label>Vehicle registration<input name="vehicle_registration" placeholder="e.g. AB12 CDE"></label><label>Locking nut<select name="locking_nut"><option value="">Unknown</option><option value="yes">Yes</option><option value="no">No</option></select></label><label>Vehicle type<select name="vehicle_type"><option value="">Unknown</option>'.$vehicleOptions.'</select></label><label>City<input name="city"></label><label>Postcode<input name="postcode"></label><div class="form-section">Google Ads attribution (optional)</div><label>GCLID<input name="gclid"></label><label>GBRAID<input name="gbraid"></label><label>WBRAID<input name="wbraid"></label><label>UTM source<input name="utm_source"></label><label>UTM medium<input name="utm_medium"></label><label>UTM campaign<input name="utm_campaign"></label><div class="form-actions"><button>Create lead</button></div></form>';
     render('Add lead', $body, $user);
 }
 
@@ -233,6 +260,9 @@ if (preg_match('#^/leads/([^/]+)$#', $path, $m)) {
     $statuses=''; foreach(['new','contacted','qualified','quoted','booked','completed','lost','spam','duplicate','existing_customer'] as $s) $statuses.='<option value="'.h($s).'"'.($lead['status']===$s?' selected':'').'>'.h(ucwords(str_replace('_',' ',$s))).'</option>';
     $fields=['customer_name'=>'Customer name','customer_phone'=>'Phone','customer_email'=>'Email','service_requested'=>'Service requested','tyre_size'=>'Tyre size','vehicle_registration'=>'Vehicle registration','city'=>'City','postcode'=>'Postcode','source_page_label'=>'Source page','quoted_amount'=>'Quoted amount','final_revenue'=>'Final revenue','quality_score'=>'Quality score 0-100','outcome_reason'=>'Outcome reason'];
     $inputs=''; foreach($fields as $key=>$label){$type=in_array($key,['quoted_amount','final_revenue','quality_score'],true)?'number':'text';$step=in_array($key,['quoted_amount','final_revenue'],true)?' step="0.01"':'';$min=$key==='quality_score'?' min="0" max="100"':'';$inputs.='<label>'.h($label).'<input type="'.$type.'"'.$step.$min.' name="'.h($key).'" value="'.h($lead[$key]??'').'"></label>';}
+    $vehicleOptions=''; foreach(['Car','Van','Caravan','Bus','Lorry','Trailer'] as $v) $vehicleOptions.='<option value="'.h($v).'"'.($lead['vehicle_type']===$v?' selected':'').'>'.h($v).'</option>';
+    $inputs .= '<label>Locking nut<select name="locking_nut"><option value="">Unknown</option><option value="yes"'.(($lead['locking_nut']??'')==='yes'?' selected':'').'>Yes</option><option value="no"'.(($lead['locking_nut']??'')==='no'?' selected':'').'>No</option></select></label>';
+    $inputs .= '<label>Vehicle type<select name="vehicle_type"><option value="">Unknown</option>'.$vehicleOptions.'</select></label>';
     if (!empty($lead['source_page_url'])) {
         $inputs .= '<div class="form-meta" style="grid-column:1/-1">Full source URL: <a href="'.h($lead['source_page_url']).'" target="_blank" rel="noopener">'.h($lead['source_page_url']).'</a></div>';
     }
@@ -241,8 +271,12 @@ if (preg_match('#^/leads/([^/]+)$#', $path, $m)) {
     render('Lead ' . $lead['public_id'], $body, $user);
 }
 if ($path === '/leads') {
-    $rows=''; foreach($leads->list(100) as $lead){$rows.='<tr><td><a href="/leads/'.rawurlencode($lead['public_id']).'">'.h(leadDisplayName($lead)).'</a></td><td>'.statusBadge($lead['status']).'</td><td>'.h($lead['lead_type']).'</td><td>'.phoneActions($lead['customer_phone']).'</td><td>'.h($lead['tyre_size']?:'—').'</td><td>'.h($lead['source_page_label']?:'—').'</td><td>'.h($lead['city']?:'—').'</td><td>'.h($lead['campaign_name']?:'—').'</td><td>'.h($lead['created_at']).'</td></tr>';}
-    render('Leads','<div class="toolbar"><h1>Leads</h1><a class="button" href="/leads/new">Add lead</a></div><table><thead><tr><th>Customer</th><th>Status</th><th>Type</th><th>Contact</th><th>Tyre size</th><th>Source page</th><th>City</th><th>Campaign</th><th>Created</th></tr></thead><tbody>'.($rows?:'<tr><td colspan="9">No leads yet.</td></tr>').'</tbody></table>',$user);
+    $rows=''; foreach($leads->list(100) as $lead){
+        $whatsappMsg = leadWhatsAppMessage($lead);
+        $copyBtn = '<button type="button" class="copy-lead-btn" data-msg="'.h($whatsappMsg).'" title="Copy WhatsApp message" onclick="navigator.clipboard.writeText(this.dataset.msg).then(()=>{const t=this.textContent;this.textContent=\'Copied!\';setTimeout(()=>this.textContent=t,1500)})">📋 Copy</button>';
+        $rows.='<tr><td><a href="/leads/'.rawurlencode($lead['public_id']).'">'.h(leadDisplayName($lead)).'</a></td><td>'.statusBadge($lead['status']).'</td><td>'.h($lead['lead_type']).'</td><td>'.phoneActions($lead['customer_phone']).'</td><td>'.h($lead['tyre_size']?:'—').'</td><td>'.h($lead['source_page_label']?:'—').'</td><td>'.h($lead['city']?:'—').'</td><td>'.h($lead['campaign_name']?:'—').'</td><td>'.h($lead['created_at']).'</td><td>'.$copyBtn.'</td></tr>';
+    }
+    render('Leads','<div class="toolbar"><h1>Leads</h1><a class="button" href="/leads/new">Add lead</a></div><table><thead><tr><th>Customer</th><th>Status</th><th>Type</th><th>Contact</th><th>Tyre size</th><th>Source page</th><th>City</th><th>Campaign</th><th>Created</th><th>Message</th></tr></thead><tbody>'.($rows?:'<tr><td colspan="10">No leads yet.</td></tr>').'</tbody></table>',$user);
 }
 if (preg_match('#^/changes/([0-9a-f-]{36})/approve$#', $path, $m) && $method === 'POST') {
     if (!AuthService::verifyCsrf($_POST['csrf'] ?? null)) { http_response_code(419); render('Invalid request', '<h1>Invalid request</h1>', $user); }

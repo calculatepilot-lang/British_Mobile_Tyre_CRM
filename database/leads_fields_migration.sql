@@ -10,3 +10,8 @@ ALTER TABLE leads
     ADD COLUMN IF NOT EXISTS remarks TEXT NULL AFTER outcome_reason,
     ADD COLUMN IF NOT EXISTS source_page_url VARCHAR(500) NULL AFTER remarks,
     ADD COLUMN IF NOT EXISTS source_page_label VARCHAR(160) NULL AFTER source_page_url;
+
+-- Locking nut and vehicle type — captured from the enquiry form.
+ALTER TABLE leads
+    ADD COLUMN IF NOT EXISTS locking_nut ENUM('yes','no') NULL AFTER vehicle_registration,
+    ADD COLUMN IF NOT EXISTS vehicle_type ENUM('Car','Van','Caravan','Bus','Lorry','Trailer') NULL AFTER locking_nut;

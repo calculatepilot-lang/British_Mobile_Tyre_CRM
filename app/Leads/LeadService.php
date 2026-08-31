@@ -44,6 +44,22 @@ final class LeadService
         return implode(' ', $words);
     }
 
+    private function normaliseLockingNut(mixed $value): ?string
+    {
+        $v = strtolower(trim((string) ($value ?? '')));
+        return in_array($v, ['yes', 'no'], true) ? $v : null;
+    }
+
+    private function normaliseVehicleType(mixed $value): ?string
+    {
+        $allowed = ['Car', 'Van', 'Caravan', 'Bus', 'Lorry', 'Trailer'];
+        $v = trim((string) ($value ?? ''));
+        foreach ($allowed as $a) {
+            if (strcasecmp($a, $v) === 0) return $a;
+        }
+        return null;
+    }
+
     public function create(array $lead, array $attribution = []): string
     {
         $type = $lead['lead_type'] ?? '';
@@ -60,7 +76,7 @@ final class LeadService
         $pdo->beginTransaction();
 
         try {
-            $stmt = $pdo->prepare('INSERT INTO leads (public_id, status, lead_type, source, customer_name, customer_phone, customer_email, service_requested, tyre_size, vehicle_registration, city, postcode, language, source_page_url, source_page_label) VALUES (:public_id, :status, :lead_type, :source, :customer_name, :customer_phone, :customer_email, :service_requested, :tyre_size, :vehicle_registration, :city, :postcode, :language, :source_page_url, :source_page_label)');
+            $stmt = $pdo->prepare('INSERT INTO leads (public_id, status, lead_type, source, customer_name, customer_phone, customer_email, service_requested, tyre_size, vehicle_registration, locking_nut, vehicle_type, city, postcode, language, source_page_url, source_page_label) VALUES (:public_id, :status, :lead_type, :source, :customer_name, :customer_phone, :customer_email, :service_requested, :tyre_size, :vehicle_registration, :locking_nut, :vehicle_type, :city, :postcode, :language, :source_page_url, :source_page_label)');
             $sourcePageUrl = $lead['source_page_url'] ?? null;
             $stmt->execute([
                 'public_id' => $publicId,
@@ -73,6 +89,8 @@ final class LeadService
                 'service_requested' => $lead['service_requested'] ?? null,
                 'tyre_size' => $lead['tyre_size'] ?? null,
                 'vehicle_registration' => $lead['vehicle_registration'] ?? null,
+                'locking_nut' => $this->normaliseLockingNut($lead['locking_nut'] ?? null),
+                'vehicle_type' => $this->normaliseVehicleType($lead['vehicle_type'] ?? null),
                 'city' => $lead['city'] ?? null,
                 'postcode' => $lead['postcode'] ?? null,
                 'language' => $this->normaliseLanguage($lead['language'] ?? null),
