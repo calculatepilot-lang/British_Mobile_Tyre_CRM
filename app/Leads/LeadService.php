@@ -84,6 +84,14 @@ final class LeadService
 
         $duplicateOf = $this->findRecentDuplicate($pdo, $lead);
 
+        // Auto-fill city from postcode when the source didn't supply one —
+        // the common case for web forms, which typically only ask for a
+        // postcode. Never blocks lead creation if the lookup fails.
+        $city = trim((string) ($lead['city'] ?? ''));
+        if ($city === '' && trim((string) ($lead['postcode'] ?? '')) !== '') {
+            $city = (new PostcodeLookupService())->lookup((string) $lead['postcode']) ?? '';
+        }
+
         $publicId = $this->newPublicId();
         $pdo->beginTransaction();
 
@@ -103,7 +111,7 @@ final class LeadService
                 'vehicle_registration' => $lead['vehicle_registration'] ?? null,
                 'locking_nut' => $this->normaliseLockingNut($lead['locking_nut'] ?? null),
                 'vehicle_type' => $this->normaliseVehicleType($lead['vehicle_type'] ?? null),
-                'city' => $lead['city'] ?? null,
+                'city' => $city !== '' ? $city : null,
                 'postcode' => $lead['postcode'] ?? null,
                 'language' => $this->normaliseLanguage($lead['language'] ?? null),
                 'source_page_url' => $sourcePageUrl,
