@@ -80,6 +80,19 @@ final class LeadRepository
         }
     }
 
+    /**
+     * Deletes a lead outright. lead_attribution and lead_events both carry
+     * ON DELETE CASCADE foreign keys to leads(id), so they're cleaned up
+     * automatically — no manual cleanup needed. income.lead_id is a plain
+     * nullable column with no FK, so any income row that once referenced
+     * this lead simply keeps its historical amount with a dangling id.
+     */
+    public function delete(string $publicId): void
+    {
+        $stmt = Database::connection()->prepare('DELETE FROM leads WHERE public_id = :public_id');
+        $stmt->execute(['public_id' => $publicId]);
+    }
+
     public function dashboard(): array
     {
         $pdo = Database::connection();

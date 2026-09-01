@@ -196,6 +196,18 @@ label{font-size:13px;font-weight:650;color:var(--text)}
 .amount-pkr{font-size:12px;color:var(--muted)}
 .copy-lead-btn{background:var(--surface);color:var(--text);border:1.5px solid var(--border);border-radius:8px;padding:6px 10px;font-size:12.5px;font-weight:600;cursor:pointer;white-space:nowrap}
 .copy-lead-btn:hover{background:#EAF1FF;border-color:#C9DBFF}
+.row-actions{display:flex;gap:8px;align-items:center;white-space:nowrap}
+.row-actions form{margin:0}
+.row-actions a,.row-actions button{background:transparent!important;color:var(--muted)!important;box-shadow:none;padding:4px 8px!important;font-size:12.5px!important;font-weight:650!important;border:0}
+.row-actions a:hover{color:var(--ink)!important;text-decoration:underline}
+.row-actions button.danger{color:var(--brand)!important}
+.row-actions button.danger:hover{color:var(--brand-hover)!important;text-decoration:underline}
+.currency-toggle{display:flex;gap:0;margin:5px 0 14px;border:1.5px solid var(--border);border-radius:9px;overflow:hidden;width:fit-content}
+.currency-toggle label{margin:0;padding:8px 14px;font-size:13px;font-weight:650;cursor:pointer;color:var(--muted);border-right:1px solid var(--border)}
+.currency-toggle label:last-child{border-right:0}
+.currency-toggle input{display:none}
+.currency-toggle input:checked+span{color:#fff}
+.currency-toggle label:has(input:checked){background:var(--ink);color:#fff}
 @media(max-width:760px){aside{width:auto;flex:none;padding:14px}.layout{display:block}.content{padding:18px}aside nav{flex-direction:row;flex-wrap:wrap}}
 </style></head><body>' . ($user
         ? '<div class="layout">' . $nav . '<main class="content">' . $body . '</main></div>'
@@ -258,6 +270,11 @@ if (preg_match('#^/leads/([^/]+)/update$#', $path, $m) && $method === 'POST') {
     $leads->updateOutcome(rawurldecode($m[1]), $_POST, (int)$user['id']);
     redirect('/leads/' . rawurlencode(rawurldecode($m[1])));
 }
+if (preg_match('#^/leads/([^/]+)/delete$#', $path, $m) && $method === 'POST') {
+    if (!AuthService::verifyCsrf($_POST['csrf'] ?? null)) { http_response_code(419); render('Invalid request', '<h1>Invalid request</h1>', $user); }
+    $leads->delete(rawurldecode($m[1]));
+    redirect('/leads');
+}
 if (preg_match('#^/leads/([^/]+)$#', $path, $m)) {
     $lead=$leads->find(rawurldecode($m[1])); if(!$lead){http_response_code(404);render('Not found','<h1>Lead not found</h1>',$user);}
     $statuses=''; foreach(['new','contacted','qualified','quoted','booked','completed','lost','spam','duplicate','existing_customer'] as $s) $statuses.='<option value="'.h($s).'"'.($lead['status']===$s?' selected':'').'>'.h(ucwords(str_replace('_',' ',$s))).'</option>';
@@ -270,16 +287,19 @@ if (preg_match('#^/leads/([^/]+)$#', $path, $m)) {
         $inputs .= '<div class="form-meta" style="grid-column:1/-1">Full source URL: <a href="'.h($lead['source_page_url']).'" target="_blank" rel="noopener">'.h($lead['source_page_url']).'</a></div>';
     }
     $inputs .= '<label style="grid-column:1/-1">Remarks (internal notes)<textarea name="remarks" rows="4" placeholder="Manual notes for this lead — anything worth flagging for whoever follows up next.">'.h($lead['remarks']??'').'</textarea></label>';
-    $body='<div class="toolbar"><div><h1>'.h(leadDisplayName($lead)).'</h1><p>'.statusBadge($lead['status']).' &nbsp;'.h($lead['lead_type']).' · '.h($lead['source']).' &nbsp;'.phoneActions($lead['customer_phone']).'</p></div><a class="button" href="/leads">Back to leads</a></div><form class="form form-grid" method="post" action="/leads/'.rawurlencode($lead['public_id']).'/update"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><div class="form-meta">Campaign: '.h($lead['campaign_name']??'—').' · Ad group: '.h($lead['ad_group_name']??'—').'<br>Keyword: '.h($lead['keyword_text']??'—').' · GCLID: '.h($lead['gclid']??'—').'</div><div class="form-section">Lead status</div><label>Status<select name="status">'.$statuses.'</select></label><div class="form-section">Details</div>'.$inputs.'<div class="form-actions"><button>Save changes</button></div></form>';
+    $deleteForm = '<form method="post" action="/leads/'.rawurlencode($lead['public_id']).'/delete" onsubmit="return confirm(\'Delete this lead permanently? This cannot be undone.\')"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><button type="submit" style="background:var(--brand)">Delete lead</button></form>';
+    $body='<div class="toolbar"><div><h1>'.h(leadDisplayName($lead)).'</h1><p>'.statusBadge($lead['status']).' &nbsp;'.h($lead['lead_type']).' · '.h($lead['source']).' &nbsp;'.phoneActions($lead['customer_phone']).'</p></div><div style="display:flex;gap:10px"><a class="button" href="/leads">Back to leads</a>'.$deleteForm.'</div></div><form class="form form-grid" method="post" action="/leads/'.rawurlencode($lead['public_id']).'/update"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><div class="form-meta">Campaign: '.h($lead['campaign_name']??'—').' · Ad group: '.h($lead['ad_group_name']??'—').'<br>Keyword: '.h($lead['keyword_text']??'—').' · GCLID: '.h($lead['gclid']??'—').'</div><div class="form-section">Lead status</div><label>Status<select name="status">'.$statuses.'</select></label><div class="form-section">Details</div>'.$inputs.'<div class="form-actions"><button>Save changes</button></div></form>';
     render('Lead ' . $lead['public_id'], $body, $user);
 }
 if ($path === '/leads') {
     $rows=''; foreach($leads->list(100) as $lead){
         $whatsappMsg = leadWhatsAppMessage($lead);
         $copyBtn = '<button type="button" class="copy-lead-btn" data-msg="'.h($whatsappMsg).'" title="Copy WhatsApp message" onclick="navigator.clipboard.writeText(this.dataset.msg).then(()=>{const t=this.textContent;this.textContent=\'Copied!\';setTimeout(()=>this.textContent=t,1500)})">📋 Copy</button>';
-        $rows.='<tr><td><a href="/leads/'.rawurlencode($lead['public_id']).'">'.h(leadDisplayName($lead)).'</a></td><td>'.statusBadge($lead['status']).'</td><td>'.h($lead['lead_type']).'</td><td>'.phoneActions($lead['customer_phone']).'</td><td>'.h($lead['tyre_size']?:'—').'</td><td>'.h($lead['source_page_label']?:'—').'</td><td>'.h($lead['city']?:'—').'</td><td>'.h($lead['campaign_name']?:'—').'</td><td>'.h($lead['created_at']).'</td><td>'.$copyBtn.'</td></tr>';
+        $rowActions = '<div class="row-actions"><a href="/leads/'.rawurlencode($lead['public_id']).'">Edit</a>'
+            .'<form method="post" action="/leads/'.rawurlencode($lead['public_id']).'/delete" onsubmit="return confirm(\'Delete this lead permanently? This cannot be undone.\')"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><button type="submit" class="danger">Delete</button></form></div>';
+        $rows.='<tr><td><a href="/leads/'.rawurlencode($lead['public_id']).'">'.h(leadDisplayName($lead)).'</a></td><td>'.statusBadge($lead['status']).'</td><td>'.h($lead['lead_type']).'</td><td>'.phoneActions($lead['customer_phone']).'</td><td>'.h($lead['tyre_size']?:'—').'</td><td>'.h($lead['source_page_label']?:'—').'</td><td>'.h($lead['city']?:'—').'</td><td>'.h($lead['campaign_name']?:'—').'</td><td>'.h($lead['created_at']).'</td><td>'.$copyBtn.'</td><td>'.$rowActions.'</td></tr>';
     }
-    render('Leads','<div class="toolbar"><h1>Leads</h1><a class="button" href="/leads/new">Add lead</a></div><table><thead><tr><th>Customer</th><th>Status</th><th>Type</th><th>Contact</th><th>Tyre size</th><th>Source page</th><th>City</th><th>Campaign</th><th>Created</th><th>Message</th></tr></thead><tbody>'.($rows?:'<tr><td colspan="10">No leads yet.</td></tr>').'</tbody></table>',$user);
+    render('Leads','<div class="toolbar"><h1>Leads</h1><a class="button" href="/leads/new">Add lead</a></div><table><thead><tr><th>Customer</th><th>Status</th><th>Type</th><th>Contact</th><th>Tyre size</th><th>Source page</th><th>City</th><th>Campaign</th><th>Created</th><th>Message</th><th>Actions</th></tr></thead><tbody>'.($rows?:'<tr><td colspan="11">No leads yet.</td></tr>').'</tbody></table>',$user);
 }
 if (preg_match('#^/changes/([0-9a-f-]{36})/approve$#', $path, $m) && $method === 'POST') {
     if (!AuthService::verifyCsrf($_POST['csrf'] ?? null)) { http_response_code(419); render('Invalid request', '<h1>Invalid request</h1>', $user); }
@@ -309,6 +329,59 @@ if ($path === '/finance/expense/new' && $method === 'POST') {
     } catch (\Throwable $e) {
         render('Finance', '<h1>Finance</h1><p class="notice">'.h($e->getMessage()).'</p><p><a href="/finance">Back to Finance</a></p>', $user);
     }
+    redirect('/finance');
+}
+if (preg_match('#^/finance/expense/(\d+)/edit$#', $path, $m)) {
+    $finance = new FinanceService();
+    $expense = $finance->getExpense((int) $m[1]);
+    if ($expense === null) { http_response_code(404); render('Not found', '<h1>Expense not found</h1><p><a href="/finance">Back to Finance</a></p>', $user); }
+    $categories = $finance->listCategories(true);
+    $categoryOptions = '<option value="">Uncategorised</option>';
+    foreach ($categories as $c) { $categoryOptions .= '<option value="'.h($c['id']).'"'.((int)($expense['category_id']??0)===(int)$c['id']?' selected':'').'>'.h($c['name']).'</option>'; }
+    $inputCurrency = $expense['input_currency'] ?? 'GBP';
+    $inputAmount = $expense['input_amount'] ?? $expense['amount'];
+    $currencyToggle = '<div style="grid-column:1/-1"><label style="display:block;margin-bottom:0">Currency</label><div class="currency-toggle">'
+        .'<label><input type="radio" name="currency" value="GBP"'.($inputCurrency==='GBP'?' checked':'').'><span>£ GBP</span></label>'
+        .'<label><input type="radio" name="currency" value="PKR"'.($inputCurrency==='PKR'?' checked':'').'><span>₨ PKR</span></label>'
+        .'</div></div>';
+    $body = '<div class="toolbar"><div><h1>Edit expense</h1><p>Changing the amount or currency fetches a fresh exchange rate; everything else keeps the original locked rate.</p></div><a class="button" href="/finance">Back to Finance</a></div>'
+        .'<form class="form form-grid" method="post" action="/finance/expense/'.(int)$expense['id'].'/update"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><label>Category<select name="category_id">'.$categoryOptions.'</select></label><label>Payee<input name="payee" value="'.h($expense['supplier']??'').'"></label>'.$currencyToggle.'<label>Amount<input type="number" step="0.01" name="amount" value="'.h($inputAmount).'" required></label><label>Date<input type="date" name="expense_date" value="'.h($expense['expense_date']).'"></label><label style="grid-column:1/-1">Note<input name="description" value="'.h($expense['description']??'').'"></label><div class="form-actions"><button style="background:var(--brand)">Save changes</button></div></form>';
+    render('Edit expense', $body, $user);
+}
+if (preg_match('#^/finance/expense/(\d+)/update$#', $path, $m) && $method === 'POST') {
+    if (!AuthService::verifyCsrf($_POST['csrf'] ?? null)) { http_response_code(419); render('Invalid request', '<h1>Invalid request</h1>', $user); }
+    try {
+        (new FinanceService())->updateExpense((int) $m[1], $_POST, (string) $user['email']);
+    } catch (\Throwable $e) {
+        render('Edit expense', '<h1>Edit expense</h1><p class="notice">'.h($e->getMessage()).'</p><p><a href="/finance/expense/'.(int)$m[1].'/edit">Back to edit</a></p>', $user);
+    }
+    redirect('/finance');
+}
+if (preg_match('#^/finance/expense/(\d+)/delete$#', $path, $m) && $method === 'POST') {
+    if (!AuthService::verifyCsrf($_POST['csrf'] ?? null)) { http_response_code(419); render('Invalid request', '<h1>Invalid request</h1>', $user); }
+    (new FinanceService())->deleteExpense((int) $m[1]);
+    redirect('/finance');
+}
+if (preg_match('#^/finance/income/(\d+)/edit$#', $path, $m)) {
+    $finance = new FinanceService();
+    $income = $finance->getIncomeById((int) $m[1]);
+    if ($income === null) { http_response_code(404); render('Not found', '<h1>Income not found</h1><p><a href="/finance">Back to Finance</a></p>', $user); }
+    $body = '<div class="toolbar"><div><h1>Edit income</h1></div><a class="button" href="/finance">Back to Finance</a></div>'
+        .'<form class="form form-grid" method="post" action="/finance/income/'.(int)$income['id'].'/update"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><label>Source<input name="source" value="'.h($income['source']).'"></label><label>Amount (GBP)<input type="number" step="0.01" name="amount_gbp" value="'.h($income['amount_gbp']).'" required></label><label>Date<input type="date" name="received_at" value="'.h($income['received_at']).'"></label><label style="grid-column:1/-1">Note<input name="description" value="'.h($income['description']??'').'"></label><div class="form-actions"><button style="background:#0F7A3D">Save changes</button></div></form>';
+    render('Edit income', $body, $user);
+}
+if (preg_match('#^/finance/income/(\d+)/update$#', $path, $m) && $method === 'POST') {
+    if (!AuthService::verifyCsrf($_POST['csrf'] ?? null)) { http_response_code(419); render('Invalid request', '<h1>Invalid request</h1>', $user); }
+    try {
+        (new FinanceService())->updateIncome((int) $m[1], $_POST, (string) $user['email']);
+    } catch (\Throwable $e) {
+        render('Edit income', '<h1>Edit income</h1><p class="notice">'.h($e->getMessage()).'</p><p><a href="/finance/income/'.(int)$m[1].'/edit">Back to edit</a></p>', $user);
+    }
+    redirect('/finance');
+}
+if (preg_match('#^/finance/income/(\d+)/delete$#', $path, $m) && $method === 'POST') {
+    if (!AuthService::verifyCsrf($_POST['csrf'] ?? null)) { http_response_code(419); render('Invalid request', '<h1>Invalid request</h1>', $user); }
+    (new FinanceService())->deleteIncome((int) $m[1]);
     redirect('/finance');
 }
 if ($path === '/finance/income/new' && $method === 'POST') {
@@ -463,15 +536,21 @@ if ($path === '/finance') {
 
     $expenseRows = '';
     foreach ($finance->listExpenses(50) as $e) {
-        $expenseRows .= '<tr><td>'.h($e['expense_date']).'</td><td>'.h($e['category_name']?:($e['category']?:'Uncategorised')).'</td><td>'.h($e['supplier']?:'—').'</td><td class="amount-gbp">£'.h(number_format((float)$e['amount'],2)).'</td><td class="amount-pkr">₨'.h(number_format((float)($e['converted_amount_pkr']??0),2)).'</td><td>'.h($e['description']?:'—').'</td></tr>';
+        $inputCur = $e['input_currency'] ?? 'GBP';
+        $inputAmt = $inputCur === 'PKR' ? '₨'.number_format((float)($e['input_amount']??0),2) : '£'.number_format((float)($e['input_amount']??$e['amount']),2);
+        $actions = '<div class="row-actions"><a href="/finance/expense/'.(int)$e['id'].'/edit">Edit</a>'
+            .'<form method="post" action="/finance/expense/'.(int)$e['id'].'/delete" onsubmit="return confirm(\'Delete this expense? This cannot be undone.\')"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><button type="submit" class="danger">Delete</button></form></div>';
+        $expenseRows .= '<tr><td>'.h($e['expense_date']).'</td><td>'.h($e['category_name']?:($e['category']?:'Uncategorised')).'</td><td>'.h($e['supplier']?:'—').'</td><td class="amount-gbp">£'.h(number_format((float)$e['amount'],2)).'</td><td class="amount-pkr">₨'.h(number_format((float)($e['converted_amount_pkr']??0),2)).'<br><span style="color:var(--muted)">entered as '.h($inputAmt).'</span></td><td>'.h($e['description']?:'—').'</td><td>'.$actions.'</td></tr>';
     }
-    $expenseTable = '<table><thead><tr><th>Date</th><th>Category</th><th>Payee</th><th>GBP</th><th>PKR</th><th>Note</th></tr></thead><tbody>'.($expenseRows?:'<tr><td colspan="6">No expenses yet.</td></tr>').'</tbody></table>';
+    $expenseTable = '<table><thead><tr><th>Date</th><th>Category</th><th>Payee</th><th>GBP</th><th>PKR</th><th>Note</th><th>Actions</th></tr></thead><tbody>'.($expenseRows?:'<tr><td colspan="7">No expenses yet.</td></tr>').'</tbody></table>';
 
     $incomeRows = '';
     foreach ($finance->listIncome(50) as $i) {
-        $incomeRows .= '<tr><td>'.h($i['received_at']).'</td><td>'.h(ucwords($i['source'])).'</td><td class="amount-gbp">£'.h(number_format((float)$i['amount_gbp'],2)).'</td><td>'.h($i['description']?:'—').'</td></tr>';
+        $actions = '<div class="row-actions"><a href="/finance/income/'.(int)$i['id'].'/edit">Edit</a>'
+            .'<form method="post" action="/finance/income/'.(int)$i['id'].'/delete" onsubmit="return confirm(\'Delete this income entry? This cannot be undone.\')"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><button type="submit" class="danger">Delete</button></form></div>';
+        $incomeRows .= '<tr><td>'.h($i['received_at']).'</td><td>'.h(ucwords($i['source'])).'</td><td class="amount-gbp">£'.h(number_format((float)$i['amount_gbp'],2)).'</td><td>'.h($i['description']?:'—').'</td><td>'.$actions.'</td></tr>';
     }
-    $incomeTable = '<table><thead><tr><th>Date</th><th>Source</th><th>GBP</th><th>Note</th></tr></thead><tbody>'.($incomeRows?:'<tr><td colspan="4">No manual income recorded yet.</td></tr>').'</tbody></table>';
+    $incomeTable = '<table><thead><tr><th>Date</th><th>Source</th><th>GBP</th><th>Note</th><th>Actions</th></tr></thead><tbody>'.($incomeRows?:'<tr><td colspan="5">No manual income recorded yet.</td></tr>').'</tbody></table>';
 
     $categoryChips = '';
     foreach ($categories as $c) {
@@ -490,7 +569,7 @@ if ($path === '/finance') {
         .'<h2>Categories</h2><div class="chip-row">'.($categoryChips?:'<p style="color:var(--muted)">No categories yet.</p>').'</div>'
         .'<form class="form form-grid" method="post" action="/finance/category/new" style="max-width:420px;margin-bottom:28px"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><label>New category<input name="name" required></label><div class="form-actions"><button>Add category</button></div></form>'
         .'<div class="finance-cols">'
-            .'<form class="form form-grid" method="post" action="/finance/expense/new"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><div class="form-section">Add expense</div><label>Category<select name="category_id">'.$categoryOptions.'</select></label><label>Payee<input name="payee"></label><label>Amount (GBP)<input type="number" step="0.01" name="amount_gbp" required></label><label>Date<input type="date" name="expense_date" value="'.h(date('Y-m-d')).'"></label><label>Note<input name="description"></label><div class="form-actions"><button style="background:var(--brand)">Add expense</button></div></form>'
+            .'<form class="form form-grid" method="post" action="/finance/expense/new"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><div class="form-section">Add expense</div><label>Category<select name="category_id">'.$categoryOptions.'</select></label><label>Payee<input name="payee"></label><div style="grid-column:1/-1"><label style="display:block;margin-bottom:0">Currency</label><div class="currency-toggle"><label><input type="radio" name="currency" value="GBP" checked><span>£ GBP</span></label><label><input type="radio" name="currency" value="PKR"><span>₨ PKR</span></label></div></div><label>Amount<input type="number" step="0.01" name="amount" required></label><label>Date<input type="date" name="expense_date" value="'.h(date('Y-m-d')).'"></label><label>Note<input name="description"></label><div class="form-actions"><button style="background:var(--brand)">Add expense</button></div></form>'
             .'<form class="form form-grid" method="post" action="/finance/income/new"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><div class="form-section">Add income</div><label>Source<input name="source" value="manual"></label><label>Amount (GBP)<input type="number" step="0.01" name="amount_gbp" required></label><label>Date<input type="date" name="received_at" value="'.h(date('Y-m-d')).'"></label><label>Note<input name="description"></label><div class="form-actions"><button style="background:#0F7A3D">Add income</button></div></form>'
         .'</div>'
         .'<h2>Recent expenses</h2>'.$expenseTable
