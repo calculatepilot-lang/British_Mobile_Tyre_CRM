@@ -5,6 +5,7 @@ declare(strict_types=1);
 require dirname(__DIR__) . '/vendor/autoload.php';
 
 use BMT\Campaigns\CampaignPlanner;
+use BMT\Campaigns\SearchStructurePlanner;
 use BMT\Conversions\ConversionPlanService;
 use BMT\Database;
 use BMT\GoogleAds\AccountAudit;
@@ -33,6 +34,12 @@ try {
     $existingCampaignNames = array_map(static fn(array $c): string => (string) $c['name'], $audit['campaigns']);
     $queuedCampaignIds = (new CampaignPlanner())->queueCampaignProposals($existingCampaignNames);
 
+    // Idempotent like the per-city planner above (checks existing campaign
+    // names + open proposals per region), so it's safe to include in every
+    // daily run even though the 10-region structure is really a one-time
+    // build — it will only ever queue the same 10 proposals once.
+    $queuedStructureIds = (new SearchStructurePlanner())->queueStructureProposals($existingCampaignNames);
+
     $summary = [
         'generated_at' => date(DATE_ATOM),
         'mode' => 'audit_only',
@@ -43,6 +50,8 @@ try {
         'conversion_proposal_ids' => $queuedChangeIds,
         'campaign_proposals_queued' => count($queuedCampaignIds),
         'campaign_proposal_ids' => $queuedCampaignIds,
+        'search_structure_proposals_queued' => count($queuedStructureIds),
+        'search_structure_proposal_ids' => $queuedStructureIds,
     ];
 
     echo json_encode($summary, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR) . PHP_EOL;

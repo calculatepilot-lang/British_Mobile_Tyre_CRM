@@ -20,6 +20,11 @@ for British Mobile Tyres.
 - Read-side account audit and daily performance reporting
 - Programmatic Search campaign planning across 61 UK cities (vehicle
   eligibility enforced: Car/Van/Caravan/Bus/Truck/Trailer only)
+- **400-ad-group Search structure** (`SearchStructurePlanner`) — 10 regional
+  campaigns x 5 services x 8 vehicle-type ad groups, each with generated
+  exact/phrase/near-me/location-intent/vehicle+service keywords and draft
+  responsive search ad copy. Same approval-then-execute, always-PAUSED
+  safety model as the per-city planner. See `docs/SEARCH_STRUCTURE_BUILD.md`.
 - Conversion action planning
 - Rule-based daily optimisation (`OptimiserService`) — fixed thresholds on
   clicks/conversions/CPA decide budget increase/decrease/pause proposals

@@ -35,6 +35,15 @@ Road coverage may be planned around:
 
 Every road/service-area coordinate must be verified and approved. The system must not invent POIs, motorway geometry or service-station coordinates.
 
+## Programmatic Search structure (400 ad groups)
+
+A second, coexisting planner — `SearchStructurePlanner` — builds 10 regional
+campaigns x 5 services x 8 vehicle types = 400 ad groups, with generated
+keywords and responsive search ad copy per ad group. Same approval-then-
+execute pattern as above; see `docs/SEARCH_STRUCTURE_BUILD.md` for the full
+structure, safety model, and how it coexists with the one-campaign-per-city
+plan described above.
+
 ## Activation gate
 
 Before any Google Ads creation or mutation:

@@ -619,13 +619,17 @@ if ($path === '/changes') {
             : '—';
         $rows.='<tr><td>'.h($c['change_type']).'</td><td>'.h($c['resource_name']?:'—').'</td><td>'.h($c['reason']).'</td><td>'.h($c['risk_level']).'</td><td>'.statusBadge($c['status']).'</td><td>'.h($c['created_at']).'</td><td>'.$actions.'</td></tr>';
 
-        if ($c['change_type'] === 'create_campaign' && $c['status'] === 'executed' && $c['before_state']) {
+        if (in_array($c['change_type'], ['create_campaign', 'create_search_structure'], true) && $c['status'] === 'executed' && $c['before_state']) {
             $decoded = json_decode((string) $c['before_state'], true);
             $checklist = $decoded['still_needed_before_enabling'] ?? null;
             if ($checklist) {
                 $items = '';
                 foreach ($checklist as $item) { $items .= '<li>'.h($item).'</li>'; }
-                $rows .= '<tr><td colspan="7" style="background:#FFF4E0;padding:12px 14px"><strong>Campaign created PAUSED — before enabling in Google Ads:</strong><ul style="margin:8px 0 0;padding-left:20px;color:var(--text)">'.$items.'</ul></td></tr>';
+                $created = $decoded['created'] ?? [];
+                $summary = $c['change_type'] === 'create_search_structure' && $created
+                    ? ' ('.(int)($created['ad_groups']??0).' ad groups, '.(int)($created['keywords']??0).' keywords, '.(int)($created['ads']??0).' ads created)'
+                    : '';
+                $rows .= '<tr><td colspan="7" style="background:#FFF4E0;padding:12px 14px"><strong>Campaign created PAUSED'.$summary.' — before enabling in Google Ads:</strong><ul style="margin:8px 0 0;padding-left:20px;color:var(--text)">'.$items.'</ul></td></tr>';
             }
         }
     }
