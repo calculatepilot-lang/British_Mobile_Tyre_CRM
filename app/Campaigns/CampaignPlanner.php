@@ -126,4 +126,85 @@ final class CampaignPlanner
 
         return $queued;
     }
+
+    /**
+     * Turns "still needs content" ad groups (from AdGroupContentAudit) into
+     * one queued proposal per ad group: a set of RSA headlines/descriptions
+     * and keyword candidates built from config/ad_copy.php templates for
+     * that ad group's city. Nothing is created in Google Ads — only a row
+     * in automation_changes for a human to review. Negative keywords from
+     * config/vehicle_policy.php are listed for the reviewer, never applied
+     * automatically (matches automatic_negative_application=false).
+     *
+     * A headline/description template that would exceed Google's RSA
+     * character limits once {city} is substituted is silently skipped
+     * rather than truncated — a truncated headline can read wrong.
+     *
+     * @param array $adGroupsNeedingContent from AdGroupContentAudit::listAdGroupsNeedingContent()
+     * @return string[] change_uuids of newly queued proposals
+     */
+    public function queueAdGroupContentProposals(array $adGroupsNeedingContent): array
+    {
+        $adCopy = require dirname(__DIR__, 2) . '/config/ad_copy.php';
+        $queued = [];
+
+        foreach ($adGroupsNeedingContent as $adGroup) {
+            $city = (string) $adGroup['city'];
+            $resourceName = 'BMT | Ad content | ' . $adGroup['ad_group_name'];
+
+            if ($this->approvals->hasOpenProposal('google_ads_ad_group_content', $resourceName)) {
+                continue;
+            }
+
+            $headlines = [];
+            foreach ($adCopy['headlines'] as $template) {
+                $text = str_replace('{city}', $city, $template);
+                if (mb_strlen($text) <= 30) {
+                    $headlines[] = $text;
+                }
+            }
+            $descriptions = [];
+            foreach ($adCopy['descriptions'] as $template) {
+                $text = str_replace('{city}', $city, $template);
+                if (mb_strlen($text) <= 90) {
+                    $descriptions[] = $text;
+                }
+            }
+            $keywords = array_map(
+                fn (string $template): array => ['text' => str_replace('{city}', $city, $template), 'match_type' => 'PHRASE'],
+                $adCopy['keyword_themes']
+            );
+
+            // RSAs require at least 3 headlines and 2 descriptions. If the
+            // city name is long enough that too few templates survive the
+            // length check, skip this ad group rather than queue a proposal
+            // that would fail on execution — flag it for manual copywriting.
+            if (count($headlines) < 3 || count($descriptions) < 2) {
+                continue;
+            }
+
+            $finalUrl = $adCopy['final_url_overrides'][$city] ?? $adCopy['final_url_base'];
+
+            $queued[] = $this->approvals->propose([
+                'change_type' => 'add_ad_group_content',
+                'resource_type' => 'google_ads_ad_group_content',
+                'resource_name' => $resourceName,
+                'reason' => 'Ad group "' . $adGroup['ad_group_name'] . '" in campaign "' . $adGroup['campaign_name'] . '" has no keywords or ads yet — proposing template-based content for ' . $city . '.',
+                'after_state' => [
+                    'ad_group_resource_name' => $adGroup['ad_group_resource_name'],
+                    'campaign_resource_name' => $adGroup['campaign_resource_name'],
+                    'city' => $city,
+                    'final_url' => $finalUrl,
+                    'headlines' => array_slice(array_values(array_unique($headlines)), 0, 15),
+                    'descriptions' => array_slice(array_values(array_unique($descriptions)), 0, 4),
+                    'keywords' => $keywords,
+                    'negative_keywords_suggested' => $this->vehicles['negative_keyword_candidates'],
+                ],
+                'risk_level' => 'medium',
+                'reversible' => true,
+            ]);
+        }
+
+        return $queued;
+    }
 }

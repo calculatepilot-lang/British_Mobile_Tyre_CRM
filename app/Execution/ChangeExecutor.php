@@ -35,6 +35,19 @@ use Google\Ads\GoogleAds\V25\Services\MutateCampaignBudgetsRequest;
 use Google\Ads\GoogleAds\V25\Services\MutateAdGroupsRequest;
 use Google\Ads\GoogleAds\V25\Services\MutateCampaignCriteriaRequest;
 use Google\Ads\GoogleAds\V25\Services\SearchGoogleAdsRequest;
+use Google\Ads\GoogleAds\V25\Enums\AdGroupCriterionStatusEnum\AdGroupCriterionStatus;
+use Google\Ads\GoogleAds\V25\Enums\AdGroupAdStatusEnum\AdGroupAdStatus;
+use Google\Ads\GoogleAds\V25\Enums\KeywordMatchTypeEnum\KeywordMatchType;
+use Google\Ads\GoogleAds\V25\Common\KeywordInfo;
+use Google\Ads\GoogleAds\V25\Common\ResponsiveSearchAdInfo;
+use Google\Ads\GoogleAds\V25\Common\AdTextAsset;
+use Google\Ads\GoogleAds\V25\Resources\AdGroupCriterion;
+use Google\Ads\GoogleAds\V25\Resources\AdGroupAd;
+use Google\Ads\GoogleAds\V25\Resources\Ad;
+use Google\Ads\GoogleAds\V25\Services\AdGroupCriterionOperation;
+use Google\Ads\GoogleAds\V25\Services\AdGroupAdOperation;
+use Google\Ads\GoogleAds\V25\Services\MutateAdGroupCriteriaRequest;
+use Google\Ads\GoogleAds\V25\Services\MutateAdGroupAdsRequest;
 use Google\Protobuf\FieldMask;
 use RuntimeException;
 use Throwable;
@@ -91,6 +104,7 @@ final class ChangeExecutor
                 $before = match ($change['change_type']) {
                     'create_conversion_action' => $this->createConversionAction($change),
                     'create_campaign' => $this->createCampaignSkeleton($change),
+                    'add_ad_group_content' => $this->addAdGroupContent($change),
                     'increase_budget', 'decrease_budget' => $this->changeBudget($change),
                     'pause_campaign' => $this->pauseCampaign($change),
                     default => null,
@@ -131,6 +145,7 @@ final class ChangeExecutor
                 $before = match ($change['change_type']) {
                     'create_conversion_action' => $this->createConversionAction($change),
                     'create_campaign' => $this->createCampaignSkeleton($change),
+                    'add_ad_group_content' => $this->addAdGroupContent($change),
                     'increase_budget', 'decrease_budget' => $this->changeBudget($change),
                     'pause_campaign' => $this->pauseCampaign($change),
                     default => null,
@@ -305,6 +320,108 @@ final class ChangeExecutor
                 'Add keywords to the ad group.',
                 'Add at least one responsive search ad.',
                 'Review and add negative keywords (see config/vehicle_policy.php negative_keyword_candidates — not applied automatically).',
+                'Switch campaign status to ENABLED in the Google Ads UI once satisfied.',
+            ],
+        ];
+    }
+
+    /**
+     * Adds keywords (Phrase match) and one responsive search ad to an
+     * existing ad group, from a CampaignPlanner::queueAdGroupContentProposals
+     * proposal. The ad group and its campaign are left exactly as they were
+     * — this never changes a PAUSED campaign to ENABLED. Negative keywords
+     * are listed on the proposal for a human to review but are never
+     * applied here, matching config/vehicle_policy.php's
+     * automatic_negative_application=false.
+     */
+    private function addAdGroupContent(array $change): array
+    {
+        $after = json_decode((string) $change['after_state'], true, 512, JSON_THROW_ON_ERROR);
+        $client = Client::make();
+        $customerId = Client::customerId();
+
+        $adGroupResourceName = (string) ($after['ad_group_resource_name'] ?? '');
+        $keywords = $after['keywords'] ?? [];
+        $headlines = $after['headlines'] ?? [];
+        $descriptions = $after['descriptions'] ?? [];
+        $finalUrl = (string) ($after['final_url'] ?? '');
+
+        if ($adGroupResourceName === '' || $finalUrl === '') {
+            throw new RuntimeException('Proposal is missing ad_group_resource_name or final_url.');
+        }
+        if (count($headlines) < 3 || count($descriptions) < 2) {
+            throw new RuntimeException('Responsive search ads need at least 3 headlines and 2 descriptions.');
+        }
+
+        // 1. Keywords — Phrase match, one operation per keyword.
+        $criterionOperations = [];
+        foreach ($keywords as $keyword) {
+            $text = (string) ($keyword['text'] ?? '');
+            if ($text === '') {
+                continue;
+            }
+            $criterion = new AdGroupCriterion([
+                'ad_group' => $adGroupResourceName,
+                'status' => AdGroupCriterionStatus::ENABLED,
+                'keyword' => new KeywordInfo([
+                    'text' => $text,
+                    'match_type' => KeywordMatchType::value((string) ($keyword['match_type'] ?? 'PHRASE')),
+                ]),
+            ]);
+            $operation = new AdGroupCriterionOperation();
+            $operation->setCreate($criterion);
+            $criterionOperations[] = $operation;
+        }
+
+        $keywordResourceNames = [];
+        if ($criterionOperations !== []) {
+            $criterionService = $client->getAdGroupCriterionServiceClient();
+            $criterionResponse = $criterionService->mutateAdGroupCriteria(new MutateAdGroupCriteriaRequest([
+                'customer_id' => (string) $customerId,
+                'operations' => $criterionOperations,
+            ]));
+            foreach ($criterionResponse->getResults() as $result) {
+                $keywordResourceNames[] = $result->getResourceName();
+            }
+        }
+
+        // 2. One responsive search ad using every headline/description
+        // supplied — Google Ads itself decides which combinations to serve.
+        $headlineAssets = array_map(fn (string $h): AdTextAsset => new AdTextAsset(['text' => $h]), $headlines);
+        $descriptionAssets = array_map(fn (string $d): AdTextAsset => new AdTextAsset(['text' => $d]), $descriptions);
+
+        $ad = new Ad([
+            'final_urls' => [$finalUrl],
+            'responsive_search_ad' => new ResponsiveSearchAdInfo([
+                'headlines' => $headlineAssets,
+                'descriptions' => $descriptionAssets,
+            ]),
+        ]);
+        $adGroupAd = new AdGroupAd([
+            'ad_group' => $adGroupResourceName,
+            'status' => AdGroupAdStatus::ENABLED, // harmless while the campaign itself is PAUSED
+            'ad' => $ad,
+        ]);
+        $adOperation = new AdGroupAdOperation();
+        $adOperation->setCreate($adGroupAd);
+        $adService = $client->getAdGroupAdServiceClient();
+        $adResponse = $adService->mutateAdGroupAds(new MutateAdGroupAdsRequest([
+            'customer_id' => (string) $customerId,
+            'operations' => [$adOperation],
+        ]));
+        $adResourceName = $adResponse->getResults()[0]->getResourceName();
+
+        return [
+            'resource_id' => $adResourceName,
+            'action' => 'ad_group_content_created',
+            'previous_state' => null,
+            'created' => [
+                'ad_group' => $adGroupResourceName,
+                'keywords' => $keywordResourceNames,
+                'ad' => $adResourceName,
+            ],
+            'still_needed_before_enabling' => [
+                'Review and add negative keywords (see negative_keywords_suggested on this proposal — not applied automatically).',
                 'Switch campaign status to ENABLED in the Google Ads UI once satisfied.',
             ],
         ];
