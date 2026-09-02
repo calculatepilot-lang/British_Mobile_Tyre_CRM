@@ -107,7 +107,7 @@ function statusBadge(string $status): string {
 }
 function render(string $title, string $body, ?array $user): never {
     $currentPath = $GLOBALS['path'] ?? '';
-    $navItems = [['/', 'Dashboard'], ['/leads', 'Leads'], ['/leads/new', 'Add lead'], ['/insights', 'Insights'], ['/finance', 'Finance'], ['/changes', 'Changes']];
+    $navItems = [['/', 'Dashboard'], ['/leads', 'Leads'], ['/leads/new', 'Add lead'], ['/insights', 'Insights'], ['/finance', 'Finance'], ['/changes', 'Google Ads']];
     $navLinks = '';
     foreach ($navItems as [$href, $label]) {
         $isActive = $href === '/' ? $currentPath === '/' : str_starts_with($currentPath, $href);
@@ -304,13 +304,13 @@ if ($path === '/leads') {
 if (preg_match('#^/changes/([0-9a-f-]{36})/approve$#', $path, $m) && $method === 'POST') {
     if (!AuthService::verifyCsrf($_POST['csrf'] ?? null)) { http_response_code(419); render('Invalid request', '<h1>Invalid request</h1>', $user); }
     try { (new ApprovalService())->approve($m[1], (string) $user['email']); }
-    catch (\Throwable $e) { render('Changes', '<h1>Automation changes</h1><p class="notice">'.h($e->getMessage()).'</p><p><a href="/changes">Back to changes</a></p>', $user); }
+    catch (\Throwable $e) { render('Google Ads', '<h1>Google Ads</h1><p class="notice">'.h($e->getMessage()).'</p><p><a href="/changes">Back to changes</a></p>', $user); }
     redirect('/changes');
 }
 if (preg_match('#^/changes/([0-9a-f-]{36})/reject$#', $path, $m) && $method === 'POST') {
     if (!AuthService::verifyCsrf($_POST['csrf'] ?? null)) { http_response_code(419); render('Invalid request', '<h1>Invalid request</h1>', $user); }
     try { (new ApprovalService())->reject($m[1]); }
-    catch (\Throwable $e) { render('Changes', '<h1>Automation changes</h1><p class="notice">'.h($e->getMessage()).'</p><p><a href="/changes">Back to changes</a></p>', $user); }
+    catch (\Throwable $e) { render('Google Ads', '<h1>Google Ads</h1><p class="notice">'.h($e->getMessage()).'</p><p><a href="/changes">Back to changes</a></p>', $user); }
     redirect('/changes');
 }
 if ($path === '/changes/run-approved' && $method === 'POST') {
@@ -319,7 +319,7 @@ if ($path === '/changes/run-approved' && $method === 'POST') {
         $result = (new \BMT\Execution\ChangeExecutor())->runPending();
         redirect('/changes?executed=' . count($result['executed']) . '&failed=' . count($result['failed']));
     } catch (\Throwable $e) {
-        render('Changes', '<h1>Automation changes</h1><p class="notice">Run failed before any change could be processed: '.h($e->getMessage()).'</p><p><a href="/changes">Back to changes</a></p>', $user);
+        render('Google Ads', '<h1>Google Ads</h1><p class="notice">Run failed before any change could be processed: '.h($e->getMessage()).'</p><p><a href="/changes">Back to changes</a></p>', $user);
     }
 }
 if ($path === '/changes/scan-ad-groups' && $method === 'POST') {
@@ -329,7 +329,7 @@ if ($path === '/changes/scan-ad-groups' && $method === 'POST') {
         $queued = (new \BMT\Campaigns\CampaignPlanner())->queueAdGroupContentProposals($needing);
         redirect('/changes?scanned=' . count($needing) . '&queued=' . count($queued));
     } catch (\Throwable $e) {
-        render('Changes', '<h1>Automation changes</h1><p class="notice">Scan failed: '.h($e->getMessage()).'</p><p><a href="/changes">Back to changes</a></p>', $user);
+        render('Google Ads', '<h1>Google Ads</h1><p class="notice">Scan failed: '.h($e->getMessage()).'</p><p><a href="/changes">Back to changes</a></p>', $user);
     }
 }
 if ($path === '/changes/scan-campaigns' && $method === 'POST') {
@@ -340,7 +340,7 @@ if ($path === '/changes/scan-campaigns' && $method === 'POST') {
         $queuedCampaigns = (new \BMT\Campaigns\CampaignPlanner())->queueCampaignProposals($existingNames);
         redirect('/changes?campaigns_queued=' . count($queuedCampaigns));
     } catch (\Throwable $e) {
-        render('Changes', '<h1>Automation changes</h1><p class="notice">Scan failed: '.h($e->getMessage()).'</p><p><a href="/changes">Back to changes</a></p>', $user);
+        render('Google Ads', '<h1>Google Ads</h1><p class="notice">Scan failed: '.h($e->getMessage()).'</p><p><a href="/changes">Back to changes</a></p>', $user);
     }
 }
 if ($path === '/changes/scan-service-campaigns' && $method === 'POST') {
@@ -351,7 +351,7 @@ if ($path === '/changes/scan-service-campaigns' && $method === 'POST') {
         $queuedServiceCampaigns = (new \BMT\Campaigns\CampaignPlanner())->queueServiceCampaignProposals($existingNames);
         redirect('/changes?service_campaigns_queued=' . count($queuedServiceCampaigns));
     } catch (\Throwable $e) {
-        render('Changes', '<h1>Automation changes</h1><p class="notice">Scan failed: '.h($e->getMessage()).'</p><p><a href="/changes">Back to changes</a></p>', $user);
+        render('Google Ads', '<h1>Google Ads</h1><p class="notice">Scan failed: '.h($e->getMessage()).'</p><p><a href="/changes">Back to changes</a></p>', $user);
     }
 }
 if ($path === '/finance/expense/new' && $method === 'POST') {
@@ -710,7 +710,7 @@ if ($path === '/changes') {
     $scanAdGroupsButton = '<form method="post" action="/changes/scan-ad-groups"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><button style="background:var(--surface);color:var(--text);border:1.5px solid var(--border)">Scan for ad groups needing content</button></form>';
     $scanCampaignsButton = '<form method="post" action="/changes/scan-campaigns"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><button style="background:var(--surface);color:var(--text);border:1.5px solid var(--border)">Scan cities for new campaigns needed</button></form>';
     $scanServiceCampaignsButton = '<form method="post" action="/changes/scan-service-campaigns"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><button style="background:var(--surface);color:var(--text);border:1.5px solid var(--border)">Build 5 service campaigns (40 ad groups)</button></form>';
-    render('Changes','<div class="toolbar"><div><h1>Automation changes</h1><p>Automation mode: <strong>'.h(envValue('AUTOMATION_MODE','audit_only')).'</strong>. Approving a change only marks it ready — nothing reaches Google Ads until you click below, so you control exactly when each batch of changes goes live. Campaigns are always created PAUSED and never auto-enabled.</p></div><div style="display:flex;gap:10px;flex-wrap:wrap">'.$scanServiceCampaignsButton.$scanCampaignsButton.$scanAdGroupsButton.$runButton.'</div></div>'.$flash.'<table><thead><tr><th>Type</th><th>Resource</th><th>Reason</th><th>Risk</th><th>Status</th><th>Created</th><th>Action</th></tr></thead><tbody>'.($rows?:'<tr><td colspan="7">No automation changes yet.</td></tr>').'</tbody></table>',$user);
+    render('Google Ads','<div class="toolbar"><div><h1>Google Ads</h1><p>Automation mode: <strong>'.h(envValue('AUTOMATION_MODE','audit_only')).'</strong>. Approving a change only marks it ready — nothing reaches Google Ads until you click below, so you control exactly when each batch of changes goes live. Campaigns are always created PAUSED and never auto-enabled.</p></div><div style="display:flex;gap:10px;flex-wrap:wrap">'.$scanServiceCampaignsButton.$scanCampaignsButton.$scanAdGroupsButton.$runButton.'</div></div>'.$flash.'<table><thead><tr><th>Type</th><th>Resource</th><th>Reason</th><th>Risk</th><th>Status</th><th>Created</th><th>Action</th></tr></thead><tbody>'.($rows?:'<tr><td colspan="7">No automation changes yet.</td></tr>').'</tbody></table>',$user);
 }
 
 $data=$leads->dashboard(); $t=$data['today']; $pendingApprovals=(new \BMT\Dashboard\DashboardService(new Database()))->overview()['pending_approvals'] ?? 0; $cards='<div class="grid"><div class="card"><div>New leads today</div><div class="metric">'.h($t['total']??0).'</div></div><div class="card"><div>Qualified today</div><div class="metric">'.h($t['qualified']??0).'</div></div><div class="card"><div>Completed today</div><div class="metric">'.h($t['completed']??0).'</div></div><div class="card"><div>Completed revenue today</div><div class="metric">£'.h(number_format((float)($t['revenue']??0),2)).'</div></div><div class="card"><a href="/changes" style="text-decoration:none;color:inherit"><div>Pending approvals</div><div class="metric">'.h($pendingApprovals).'</div></a></div></div>';
