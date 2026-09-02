@@ -610,6 +610,21 @@ if ($path === '/insights') {
         .'<h2>Lead quality by vehicle type</h2>'.$byVehicle
         .'<h2>Lead quality by campaign</h2>'.$byCampaign, $user);
 }
+if ($path === '/tools/google-ads-test') {
+    try {
+        $audit = (new \BMT\GoogleAds\AccountAudit())->run();
+        $rows = '';
+        foreach ($audit['campaigns'] as $c) {
+            $rows .= '<tr><td>'.h($c['name']).'</td><td>'.h($c['status']).'</td><td>'.h($c['channel_type']).'</td></tr>';
+        }
+        $body = '<h1>Google Ads connection test</h1><p class="notice" style="background:#e6f4ea;color:#1e4620;border-color:#b7dfc0">✅ Connected successfully — this was a read-only call, nothing was changed in your account.</p>'
+            .'<h2>Account</h2><table><tr><th>Name</th><td>'.h($audit['account']['name'] ?? '—').'</td></tr><tr><th>Customer ID</th><td>'.h($audit['account']['customer_id'] ?? '—').'</td></tr><tr><th>Currency</th><td>'.h($audit['account']['currency_code'] ?? '—').'</td></tr><tr><th>Time zone</th><td>'.h($audit['account']['time_zone'] ?? '—').'</td></tr></table>'
+            .'<h2>Campaigns ('.(int)$audit['campaign_count'].')</h2><table><thead><tr><th>Name</th><th>Status</th><th>Type</th></tr></thead><tbody>'.($rows ?: '<tr><td colspan="3">No campaigns found in this account yet.</td></tr>').'</tbody></table>';
+    } catch (\Throwable $e) {
+        $body = '<h1>Google Ads connection test</h1><p class="notice">❌ Connection failed: '.h($e->getMessage()).'</p><p style="color:var(--muted)">This is a read-only test — nothing was changed. Check your .env credentials and try again.</p>';
+    }
+    render('Google Ads test', $body, $user);
+}
 if ($path === '/changes') {
     $rows=''; $approvedCount=0; foreach((new ApprovalService())->list(100) as $c){
         if ($c['status']==='planned') $approvedCount++;
