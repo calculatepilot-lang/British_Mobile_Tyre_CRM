@@ -188,10 +188,12 @@ final class CampaignPlanner
                     $descriptions[] = $text;
                 }
             }
-            $keywords = array_map(
-                fn (string $template): array => ['text' => str_replace('{city}', $city, $template), 'match_type' => 'PHRASE'],
-                $adCopy['keyword_themes']
-            );
+            $keywords = [];
+            foreach ($adCopy['keyword_themes'] as $template) {
+                $text = str_replace('{city}', $city, $template);
+                $keywords[] = ['text' => $text, 'match_type' => 'EXACT'];
+                $keywords[] = ['text' => $text, 'match_type' => 'PHRASE'];
+            }
 
             // RSAs require at least 3 headlines and 2 descriptions. If the
             // city name is long enough that too few templates survive the
@@ -241,15 +243,16 @@ final class CampaignPlanner
      * Nothing is created in Google Ads by this method — only rows in
      * automation_changes for a human to review.
      *
-     * Keyword volume note: with 61 cities, each ad group carries roughly
-     * 4 base keywords + 61 Service+Location + 61 Service+Vehicle+Location
-     * = ~126 keywords, x 40 ad groups = ~5,000 keyword criteria account-wide.
-     * That's within Google's technical limits but well above typical
-     * per-ad-group best practice (usually 5-20) — this is a deliberate
-     * trade-off to match the exact keyword combinations requested; review
-     * one campaign's Quality Score after a few weeks live and consider
-     * trimming underperforming city keywords rather than assuming more is
-     * always better.
+     * Keyword volume note: with 61 cities, each ad group carries 6 base
+     * keywords (3 Service+Vehicle phrasings x Exact+Phrase) + 244 city
+     * keywords (2 combos x 61 cities x Exact+Phrase) = 250 keywords, x 40
+     * ad groups = ~10,000 keyword criteria account-wide. That's within
+     * Google's technical limits but well above typical per-ad-group best
+     * practice (usually 5-20) — this is a deliberate trade-off to match
+     * the exact keyword/match-type combinations requested (Exact and
+     * Phrase only, no Broad); review one campaign's Quality Score after a
+     * few weeks live and consider trimming underperforming city keywords
+     * rather than assuming more is always better.
      *
      * @return string[] change_uuids of newly queued proposals
      */
@@ -315,28 +318,29 @@ final class CampaignPlanner
     }
 
     /**
-     * Builds the real per-city keyword set: Service+Vehicle (Exact/Phrase),
-     * Service+Location for every city, and Service+Vehicle+Location for
-     * every city — matching the combinations specified directly: "Mobile
-     * Tyre Repair For Car" / "Mobile Car Tyre Repair" (Service+Vehicle),
-     * "Mobile Tyre Repair London" (Service+Location), "Mobile Car Tyre
-     * Repair in London" (Service+Vehicle+Location).
+     * Builds the real per-city keyword set: Service+Vehicle, Service+
+     * Location, and Service+Vehicle+Location, matching the combinations
+     * specified directly: "Mobile Tyre Repair For Car" / "Mobile Car Tyre
+     * Repair" (Service+Vehicle), "Mobile Tyre Repair London"
+     * (Service+Location), "Mobile Car Tyre Repair in London"
+     * (Service+Vehicle+Location). Every combination is added as BOTH Exact
+     * and Phrase match — no other match types (e.g. Broad) are ever used.
      *
      * @param string[] $cityNames all cities from config/cities.php
      */
     private function buildKeywords(string $service, string $vehicle, array $cityNames): array
     {
         $keywords = [];
-        $keywords[] = ['text' => $vehicle . ' ' . $service, 'match_type' => 'EXACT'];
-        $keywords[] = ['text' => $service . ' ' . $vehicle, 'match_type' => 'EXACT'];
-        $keywords[] = ['text' => $vehicle . ' ' . $service, 'match_type' => 'PHRASE'];
-        $keywords[] = ['text' => $vehicle . ' ' . $service . ' near me', 'match_type' => 'PHRASE'];
+        foreach ([$vehicle . ' ' . $service, $service . ' ' . $vehicle, $vehicle . ' ' . $service . ' near me'] as $text) {
+            $keywords[] = ['text' => $text, 'match_type' => 'EXACT'];
+            $keywords[] = ['text' => $text, 'match_type' => 'PHRASE'];
+        }
 
         foreach ($cityNames as $city) {
-            // Service+Location, e.g. "Mobile Tyre Repair London".
-            $keywords[] = ['text' => $service . ' ' . $city, 'match_type' => 'PHRASE'];
-            // Service+Vehicle+Location, e.g. "Car Mobile Tyre Repair London".
-            $keywords[] = ['text' => $vehicle . ' ' . $service . ' ' . $city, 'match_type' => 'PHRASE'];
+            foreach ([$service . ' ' . $city, $vehicle . ' ' . $service . ' ' . $city] as $text) {
+                $keywords[] = ['text' => $text, 'match_type' => 'EXACT'];
+                $keywords[] = ['text' => $text, 'match_type' => 'PHRASE'];
+            }
         }
 
         return $keywords;
