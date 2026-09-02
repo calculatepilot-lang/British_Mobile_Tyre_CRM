@@ -77,7 +77,7 @@ final class CampaignPlanner
     public function queueCampaignProposals(array $existingCampaignNames = []): array
     {
         $plan = $this->build();
-        $existing = array_map('mb_strtolower', $existingCampaignNames);
+        $existingLower = array_map('mb_strtolower', $existingCampaignNames);
         $dailyCap = (float) $this->automation['max_daily_budget'];
         $weightUnits = 0;
         foreach ($plan['markets'] as $market) {
@@ -87,8 +87,26 @@ final class CampaignPlanner
         $queued = [];
         foreach ($plan['markets'] as $market) {
             $resourceName = 'BMT | Search | ' . $market['city'];
+            $cityLower = mb_strtolower($market['city']);
 
-            if (in_array(mb_strtolower($resourceName), $existing, true)) {
+            // A city already has a live campaign if ANY existing campaign
+            // name contains the city name — not just an exact match to this
+            // planner's own "BMT | Search | {city}" convention. Real
+            // accounts often already have campaigns under a different
+            // naming scheme (e.g. "Search - Mobile Tyre - {city}"), and an
+            // exact-match check would propose a duplicate for every one of
+            // those. This substring check errs on the side of NOT proposing
+            // a duplicate — it may occasionally skip a genuinely new city
+            // whose name happens to appear inside an unrelated campaign
+            // name, but never the reverse.
+            $alreadyCovered = false;
+            foreach ($existingLower as $name) {
+                if (str_contains($name, $cityLower)) {
+                    $alreadyCovered = true;
+                    break;
+                }
+            }
+            if ($alreadyCovered) {
                 continue;
             }
 
