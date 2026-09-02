@@ -229,17 +229,27 @@ final class CampaignPlanner
     /**
      * Builds the 5 services x 8 vehicles = 40 ad group structure requested:
      * one campaign per service, each with 8 vehicle-named ad groups, each
-     * ad group with Exact/Phrase/near-me/location-intent keywords and one
-     * RSA. Every campaign targets all 61 cities from config/cities.php via
-     * proximity criteria (real geo-targeting) — city names inside keywords
-     * are limited to a handful of cluster labels for local-intent phrases,
-     * not one keyword per city, to keep keyword counts realistic.
+     * ad group with real per-city keyword combinations — Service+Vehicle,
+     * Service+Location, and Service+Vehicle+Location, for EVERY one of the
+     * 61 cities in config/cities.php, not sample cluster labels. Every
+     * campaign also targets all 61 cities via proximity criteria (real
+     * geo-targeting) in addition to the location text baked into keywords.
      *
      * Everything is queued as ONE proposal per service (not split into a
      * skeleton + separate content step) since the full 8-ad-group structure
      * is the atomic unit a reviewer should see and approve together.
      * Nothing is created in Google Ads by this method — only rows in
      * automation_changes for a human to review.
+     *
+     * Keyword volume note: with 61 cities, each ad group carries roughly
+     * 4 base keywords + 61 Service+Location + 61 Service+Vehicle+Location
+     * = ~126 keywords, x 40 ad groups = ~5,000 keyword criteria account-wide.
+     * That's within Google's technical limits but well above typical
+     * per-ad-group best practice (usually 5-20) — this is a deliberate
+     * trade-off to match the exact keyword combinations requested; review
+     * one campaign's Quality Score after a few weeks live and consider
+     * trimming underperforming city keywords rather than assuming more is
+     * always better.
      *
      * @return string[] change_uuids of newly queued proposals
      */
@@ -253,9 +263,6 @@ final class CampaignPlanner
             fn (array $c): array => ['name' => $c['name'], 'lat' => $c['lat'], 'lng' => $c['lng']],
             $this->cities['cities']
         );
-        $clusterSize = (int) ceil(count($cityNames) / max(1, (int) $config['city_cluster_count']));
-        $clusters = array_chunk($cityNames, max(1, $clusterSize));
-        $clusterLabels = array_map(fn (array $chunk): string => $chunk[0] . ' area', $clusters);
 
         $dailyCap = (float) $this->automation['max_daily_budget'];
         $suggestedDailyBudget = $dailyCap > 0 ? round($dailyCap / count($config['services']), 2) : 0.0;
@@ -279,8 +286,8 @@ final class CampaignPlanner
             foreach ($config['vehicles'] as $vehicle) {
                 $adGroups[] = [
                     'ad_group_name' => $serviceLabel . ' - ' . $vehicle,
-                    'keywords' => $this->buildKeywords($serviceLabel, $vehicle, $clusterLabels),
-                    'headlines' => $this->buildTexts($config['headline_templates'], $serviceLabel, $vehicle, 30),
+                    'keywords' => $this->buildKeywords($serviceLabel, $vehicle, $cityNames),
+                    'headlines' => $this->buildHeadlines($config['headline_templates'], $serviceLabel, $vehicle),
                     'descriptions' => $this->buildTexts($config['description_templates'], $serviceLabel, $vehicle, 90, true),
                 ];
             }
@@ -307,19 +314,58 @@ final class CampaignPlanner
         return $queued;
     }
 
-    /** @param string[] $clusterLabels */
-    private function buildKeywords(string $service, string $vehicle, array $clusterLabels): array
+    /**
+     * Builds the real per-city keyword set: Service+Vehicle (Exact/Phrase),
+     * Service+Location for every city, and Service+Vehicle+Location for
+     * every city — matching the combinations specified directly: "Mobile
+     * Tyre Repair For Car" / "Mobile Car Tyre Repair" (Service+Vehicle),
+     * "Mobile Tyre Repair London" (Service+Location), "Mobile Car Tyre
+     * Repair in London" (Service+Vehicle+Location).
+     *
+     * @param string[] $cityNames all cities from config/cities.php
+     */
+    private function buildKeywords(string $service, string $vehicle, array $cityNames): array
     {
         $keywords = [];
         $keywords[] = ['text' => $vehicle . ' ' . $service, 'match_type' => 'EXACT'];
         $keywords[] = ['text' => $service . ' ' . $vehicle, 'match_type' => 'EXACT'];
         $keywords[] = ['text' => $vehicle . ' ' . $service, 'match_type' => 'PHRASE'];
         $keywords[] = ['text' => $vehicle . ' ' . $service . ' near me', 'match_type' => 'PHRASE'];
-        foreach ($clusterLabels as $label) {
-            $keywords[] = ['text' => $vehicle . ' ' . $service . ' ' . $label, 'match_type' => 'PHRASE'];
+
+        foreach ($cityNames as $city) {
+            // Service+Location, e.g. "Mobile Tyre Repair London".
+            $keywords[] = ['text' => $service . ' ' . $city, 'match_type' => 'PHRASE'];
+            // Service+Vehicle+Location, e.g. "Car Mobile Tyre Repair London".
+            $keywords[] = ['text' => $vehicle . ' ' . $service . ' ' . $city, 'match_type' => 'PHRASE'];
         }
 
         return $keywords;
+    }
+
+    /**
+     * Headlines built from templates PLUS one explicit "Mobile {Vehicle}
+     * Tyre {X}" combination (e.g. service "Mobile Tyre Repair" + vehicle
+     * "Car" -> "Mobile Car Tyre Repair") when the service label follows the
+     * "Mobile Tyre {X}" pattern every config/service_ad_config.php entry
+     * uses — matching the exact phrasing specified. Skipped (not
+     * truncated) if it would exceed 30 characters or the service label
+     * doesn't match that pattern.
+     *
+     * @param string[] $templates
+     * @return string[]
+     */
+    private function buildHeadlines(array $templates, string $service, string $vehicle): array
+    {
+        $headlines = $this->buildTexts($templates, $service, $vehicle, 30);
+
+        if (str_starts_with($service, 'Mobile Tyre ')) {
+            $natural = 'Mobile ' . $vehicle . ' Tyre ' . substr($service, strlen('Mobile Tyre '));
+            if (mb_strlen($natural) <= 30) {
+                array_unshift($headlines, $natural);
+            }
+        }
+
+        return array_values(array_unique($headlines));
     }
 
     /** @param string[] $templates @return string[] */

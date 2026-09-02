@@ -2,14 +2,12 @@
 
 // Config for CampaignPlanner::queueServiceCampaignProposals(). Produces
 // 5 campaigns (one per service) x 8 ad groups (one per vehicle type) = 40
-// ad groups. All 61 cities from config/cities.php are targeted on every
-// campaign via proximity location criteria (real geo-targeting) — the
-// "city cluster" labels below are ONLY used to generate a few realistic
-// local-intent keyword phrases per ad group; they are NOT a substitute for
-// the actual per-city location targeting, and are not true geographic
-// regions (just an even chunking of the city list, labelled by its first
-// city, since config/cities.php has no region field to group by properly).
-// Adjust cluster labels/groupings by hand if a chunk reads oddly.
+// ad groups. Keywords per ad group cover Service+Vehicle, Service+Location,
+// and Service+Vehicle+Location for every one of the 61 cities in
+// config/cities.php — see CampaignPlanner::buildKeywords() for the exact
+// combinations. All 61 cities are also targeted via proximity location
+// criteria on every campaign (real geo-targeting), independent of the
+// location text baked into keywords.
 
 return [
     'services' => [
@@ -27,10 +25,6 @@ return [
     'vehicles' => [
         'Car', 'Van', 'Caravan', 'Carvan', 'Truck', 'Bus', 'Trailer', 'Lorry',
     ],
-
-    // Regenerate by chunking config/cities.php cities into 8 groups and
-    // labelling each by its first city, e.g. "London area".
-    'city_cluster_count' => 8,
 
     'final_url_base' => 'https://britishmobiletyres.co.uk/',
 
