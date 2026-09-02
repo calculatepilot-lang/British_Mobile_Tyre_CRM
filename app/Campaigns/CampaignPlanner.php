@@ -225,4 +225,117 @@ final class CampaignPlanner
 
         return $queued;
     }
+
+    /**
+     * Builds the 5 services x 8 vehicles = 40 ad group structure requested:
+     * one campaign per service, each with 8 vehicle-named ad groups, each
+     * ad group with Exact/Phrase/near-me/location-intent keywords and one
+     * RSA. Every campaign targets all 61 cities from config/cities.php via
+     * proximity criteria (real geo-targeting) — city names inside keywords
+     * are limited to a handful of cluster labels for local-intent phrases,
+     * not one keyword per city, to keep keyword counts realistic.
+     *
+     * Everything is queued as ONE proposal per service (not split into a
+     * skeleton + separate content step) since the full 8-ad-group structure
+     * is the atomic unit a reviewer should see and approve together.
+     * Nothing is created in Google Ads by this method — only rows in
+     * automation_changes for a human to review.
+     *
+     * @return string[] change_uuids of newly queued proposals
+     */
+    public function queueServiceCampaignProposals(array $existingCampaignNames = []): array
+    {
+        $config = require dirname(__DIR__, 2) . '/config/service_ad_config.php';
+        $existingLower = array_map('mb_strtolower', $existingCampaignNames);
+
+        $cityNames = array_column($this->cities['cities'], 'name');
+        $cityCentres = array_map(
+            fn (array $c): array => ['name' => $c['name'], 'lat' => $c['lat'], 'lng' => $c['lng']],
+            $this->cities['cities']
+        );
+        $clusterSize = (int) ceil(count($cityNames) / max(1, (int) $config['city_cluster_count']));
+        $clusters = array_chunk($cityNames, max(1, $clusterSize));
+        $clusterLabels = array_map(fn (array $chunk): string => $chunk[0] . ' area', $clusters);
+
+        $dailyCap = (float) $this->automation['max_daily_budget'];
+        $suggestedDailyBudget = $dailyCap > 0 ? round($dailyCap / count($config['services']), 2) : 0.0;
+
+        $queued = [];
+        foreach ($config['services'] as $serviceLabel) {
+            $campaignName = 'BMT | Search | ' . $serviceLabel;
+
+            $alreadyExists = false;
+            foreach ($existingLower as $name) {
+                if (mb_strtolower($campaignName) === $name) {
+                    $alreadyExists = true;
+                    break;
+                }
+            }
+            if ($alreadyExists || $this->approvals->hasOpenProposal('google_ads_service_campaign', $campaignName)) {
+                continue;
+            }
+
+            $adGroups = [];
+            foreach ($config['vehicles'] as $vehicle) {
+                $adGroups[] = [
+                    'ad_group_name' => $serviceLabel . ' - ' . $vehicle,
+                    'keywords' => $this->buildKeywords($serviceLabel, $vehicle, $clusterLabels),
+                    'headlines' => $this->buildTexts($config['headline_templates'], $serviceLabel, $vehicle, 30),
+                    'descriptions' => $this->buildTexts($config['description_templates'], $serviceLabel, $vehicle, 90, true),
+                ];
+            }
+
+            $queued[] = $this->approvals->propose([
+                'change_type' => 'create_service_campaign',
+                'resource_type' => 'google_ads_service_campaign',
+                'resource_name' => $campaignName,
+                'reason' => 'New Search campaign proposed for "' . $serviceLabel . '" — 8 ad groups (one per vehicle type), all ' . count($cityNames) . ' cities targeted.',
+                'after_state' => [
+                    'campaign_name' => $campaignName,
+                    'service' => $serviceLabel,
+                    'suggested_daily_budget' => $suggestedDailyBudget,
+                    'city_centres' => $cityCentres,
+                    'final_url' => $config['final_url_base'],
+                    'ad_groups' => $adGroups,
+                    'negative_keywords_suggested' => $this->vehicles['negative_keyword_candidates'],
+                ],
+                'risk_level' => 'high',
+                'reversible' => true,
+            ]);
+        }
+
+        return $queued;
+    }
+
+    /** @param string[] $clusterLabels */
+    private function buildKeywords(string $service, string $vehicle, array $clusterLabels): array
+    {
+        $keywords = [];
+        $keywords[] = ['text' => $vehicle . ' ' . $service, 'match_type' => 'EXACT'];
+        $keywords[] = ['text' => $service . ' ' . $vehicle, 'match_type' => 'EXACT'];
+        $keywords[] = ['text' => $vehicle . ' ' . $service, 'match_type' => 'PHRASE'];
+        $keywords[] = ['text' => $vehicle . ' ' . $service . ' near me', 'match_type' => 'PHRASE'];
+        foreach ($clusterLabels as $label) {
+            $keywords[] = ['text' => $vehicle . ' ' . $service . ' ' . $label, 'match_type' => 'PHRASE'];
+        }
+
+        return $keywords;
+    }
+
+    /** @param string[] $templates @return string[] */
+    private function buildTexts(array $templates, string $service, string $vehicle, int $maxLength, bool $lowercase = false): array
+    {
+        $serviceText = $lowercase ? mb_strtolower($service) : $service;
+        $vehicleText = $lowercase ? mb_strtolower($vehicle) : $vehicle;
+
+        $texts = [];
+        foreach ($templates as $template) {
+            $text = str_replace(['{service}', '{vehicle}'], [$serviceText, $vehicleText], $template);
+            if (mb_strlen($text) <= $maxLength) {
+                $texts[] = $text;
+            }
+        }
+
+        return array_values(array_unique($texts));
+    }
 }

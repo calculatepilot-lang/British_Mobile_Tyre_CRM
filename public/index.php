@@ -343,6 +343,17 @@ if ($path === '/changes/scan-campaigns' && $method === 'POST') {
         render('Changes', '<h1>Automation changes</h1><p class="notice">Scan failed: '.h($e->getMessage()).'</p><p><a href="/changes">Back to changes</a></p>', $user);
     }
 }
+if ($path === '/changes/scan-service-campaigns' && $method === 'POST') {
+    if (!AuthService::verifyCsrf($_POST['csrf'] ?? null)) { http_response_code(419); render('Invalid request', '<h1>Invalid request</h1>', $user); }
+    try {
+        $audit = (new \BMT\GoogleAds\AccountAudit())->run();
+        $existingNames = array_map(fn($c) => $c['name'], $audit['campaigns']);
+        $queuedServiceCampaigns = (new \BMT\Campaigns\CampaignPlanner())->queueServiceCampaignProposals($existingNames);
+        redirect('/changes?service_campaigns_queued=' . count($queuedServiceCampaigns));
+    } catch (\Throwable $e) {
+        render('Changes', '<h1>Automation changes</h1><p class="notice">Scan failed: '.h($e->getMessage()).'</p><p><a href="/changes">Back to changes</a></p>', $user);
+    }
+}
 if ($path === '/finance/expense/new' && $method === 'POST') {
     if (!AuthService::verifyCsrf($_POST['csrf'] ?? null)) { http_response_code(419); render('Invalid request', '<h1>Invalid request</h1>', $user); }
     try {
@@ -671,6 +682,14 @@ if ($path === '/changes') {
             $keywordsPreview = implode(', ', array_map(fn($k) => $k['text'] ?? '', array_slice($decoded['keywords'] ?? [], 0, 4)));
             $rows .= '<tr><td colspan="7" style="background:#F5F7FF;padding:12px 14px;color:var(--text)"><strong>Proposed headlines:</strong> '.h($headlinesPreview).'&hellip;<br><strong>Proposed keywords (phrase match):</strong> '.h($keywordsPreview).'&hellip;<br><strong>Final URL:</strong> '.h($decoded['final_url']??'').'</td></tr>';
         }
+
+        if ($c['change_type'] === 'create_service_campaign' && in_array($c['status'], ['pending_approval','planned'], true) && $c['after_state']) {
+            $decoded = json_decode((string) $c['after_state'], true);
+            $adGroupNames = implode(', ', array_map(fn($ag) => $ag['ad_group_name'] ?? '', $decoded['ad_groups'] ?? []));
+            $firstAdGroup = $decoded['ad_groups'][0] ?? null;
+            $sampleKeywords = $firstAdGroup ? implode(', ', array_map(fn($k) => $k['text'] ?? '', array_slice($firstAdGroup['keywords'] ?? [], 0, 6))) : '';
+            $rows .= '<tr><td colspan="7" style="background:#F5F7FF;padding:12px 14px;color:var(--text)"><strong>8 ad groups:</strong> '.h($adGroupNames).'<br><strong>Sample keywords ('.h($firstAdGroup['ad_group_name']??'').'):</strong> '.h($sampleKeywords).'&hellip;<br><strong>Cities targeted:</strong> '.count($decoded['city_centres']??[]).'&nbsp; <strong>Daily budget:</strong> '.h(number_format((float)($decoded['suggested_daily_budget']??0),2)).'&nbsp; <strong>Final URL:</strong> '.h($decoded['final_url']??'').'</td></tr>';
+        }
     }
     $flash='';
     if (isset($_GET['executed']) || isset($_GET['failed'])) {
@@ -682,12 +701,16 @@ if ($path === '/changes') {
     if (isset($_GET['campaigns_queued'])) {
         $flash.='<p class="notice" style="background:#e6f4ea;color:#1e4620;border-color:#b7dfc0">'.(int)$_GET['campaigns_queued'].' new campaign proposal(s) queued below for review (cities from config/cities.php that don\'t already have a matching campaign).</p>';
     }
+    if (isset($_GET['service_campaigns_queued'])) {
+        $flash.='<p class="notice" style="background:#e6f4ea;color:#1e4620;border-color:#b7dfc0">'.(int)$_GET['service_campaigns_queued'].' new service campaign proposal(s) queued below (each with 8 vehicle ad groups, all 61 cities targeted) — review carefully before approving.</p>';
+    }
     $runButton = $approvedCount > 0
         ? '<form method="post" action="/changes/run-approved" onsubmit="return confirm(\'This will apply '.(int)$approvedCount.' approved change(s) to your live Google Ads account. Continue?\')"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><button>Run '.(int)$approvedCount.' approved change(s)</button></form>'
         : '';
     $scanAdGroupsButton = '<form method="post" action="/changes/scan-ad-groups"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><button style="background:var(--surface);color:var(--text);border:1.5px solid var(--border)">Scan for ad groups needing content</button></form>';
     $scanCampaignsButton = '<form method="post" action="/changes/scan-campaigns"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><button style="background:var(--surface);color:var(--text);border:1.5px solid var(--border)">Scan cities for new campaigns needed</button></form>';
-    render('Changes','<div class="toolbar"><div><h1>Automation changes</h1><p>Automation mode: <strong>'.h(envValue('AUTOMATION_MODE','audit_only')).'</strong>. Approving a change only marks it ready — nothing reaches Google Ads until you click below, so you control exactly when each batch of changes goes live. Campaigns are always created PAUSED and never auto-enabled.</p></div><div style="display:flex;gap:10px;flex-wrap:wrap">'.$scanCampaignsButton.$scanAdGroupsButton.$runButton.'</div></div>'.$flash.'<table><thead><tr><th>Type</th><th>Resource</th><th>Reason</th><th>Risk</th><th>Status</th><th>Created</th><th>Action</th></tr></thead><tbody>'.($rows?:'<tr><td colspan="7">No automation changes yet.</td></tr>').'</tbody></table>',$user);
+    $scanServiceCampaignsButton = '<form method="post" action="/changes/scan-service-campaigns"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><button style="background:var(--surface);color:var(--text);border:1.5px solid var(--border)">Build 5 service campaigns (40 ad groups)</button></form>';
+    render('Changes','<div class="toolbar"><div><h1>Automation changes</h1><p>Automation mode: <strong>'.h(envValue('AUTOMATION_MODE','audit_only')).'</strong>. Approving a change only marks it ready — nothing reaches Google Ads until you click below, so you control exactly when each batch of changes goes live. Campaigns are always created PAUSED and never auto-enabled.</p></div><div style="display:flex;gap:10px;flex-wrap:wrap">'.$scanServiceCampaignsButton.$scanCampaignsButton.$scanAdGroupsButton.$runButton.'</div></div>'.$flash.'<table><thead><tr><th>Type</th><th>Resource</th><th>Reason</th><th>Risk</th><th>Status</th><th>Created</th><th>Action</th></tr></thead><tbody>'.($rows?:'<tr><td colspan="7">No automation changes yet.</td></tr>').'</tbody></table>',$user);
 }
 
 $data=$leads->dashboard(); $t=$data['today']; $pendingApprovals=(new \BMT\Dashboard\DashboardService(new Database()))->overview()['pending_approvals'] ?? 0; $cards='<div class="grid"><div class="card"><div>New leads today</div><div class="metric">'.h($t['total']??0).'</div></div><div class="card"><div>Qualified today</div><div class="metric">'.h($t['qualified']??0).'</div></div><div class="card"><div>Completed today</div><div class="metric">'.h($t['completed']??0).'</div></div><div class="card"><div>Completed revenue today</div><div class="metric">£'.h(number_format((float)($t['revenue']??0),2)).'</div></div><div class="card"><a href="/changes" style="text-decoration:none;color:inherit"><div>Pending approvals</div><div class="metric">'.h($pendingApprovals).'</div></a></div></div>';

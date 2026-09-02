@@ -104,6 +104,7 @@ final class ChangeExecutor
                 $before = match ($change['change_type']) {
                     'create_conversion_action' => $this->createConversionAction($change),
                     'create_campaign' => $this->createCampaignSkeleton($change),
+                    'create_service_campaign' => $this->createServiceCampaign($change),
                     'add_ad_group_content' => $this->addAdGroupContent($change),
                     'increase_budget', 'decrease_budget' => $this->changeBudget($change),
                     'pause_campaign' => $this->pauseCampaign($change),
@@ -145,6 +146,7 @@ final class ChangeExecutor
                 $before = match ($change['change_type']) {
                     'create_conversion_action' => $this->createConversionAction($change),
                     'create_campaign' => $this->createCampaignSkeleton($change),
+                    'create_service_campaign' => $this->createServiceCampaign($change),
                     'add_ad_group_content' => $this->addAdGroupContent($change),
                     'increase_budget', 'decrease_budget' => $this->changeBudget($change),
                     'pause_campaign' => $this->pauseCampaign($change),
@@ -166,6 +168,202 @@ final class ChangeExecutor
         }
 
         return $result;
+    }
+
+    /**
+     * Executes a queueServiceCampaignProposals() proposal: one campaign,
+     * proximity location targeting for every city on the proposal, and
+     * ALL 8 vehicle ad groups (with their keywords and one RSA each) in a
+     * single pass. The campaign is always created PAUSED — see class
+     * docblock — and stays that way regardless of how much content is
+     * added; only a human switches it to ENABLED in the Google Ads UI.
+     */
+    private function createServiceCampaign(array $change): array
+    {
+        $after = json_decode((string) $change['after_state'], true, 512, JSON_THROW_ON_ERROR);
+        $client = Client::make();
+        $customerId = Client::customerId();
+
+        $campaignName = (string) ($after['campaign_name'] ?? $change['resource_name']);
+        $dailyBudget = (float) ($after['suggested_daily_budget'] ?? 0);
+        $cityCentres = $after['city_centres'] ?? [];
+        $adGroupSpecs = $after['ad_groups'] ?? [];
+        $finalUrl = (string) ($after['final_url'] ?? '');
+
+        if ($dailyBudget <= 0) {
+            throw new RuntimeException('Cannot create campaign "' . $campaignName . '" — no positive suggested_daily_budget.');
+        }
+        if ($cityCentres === []) {
+            throw new RuntimeException('Cannot create campaign "' . $campaignName . '" — no city_centres on the proposal.');
+        }
+        if ($adGroupSpecs === [] || $finalUrl === '') {
+            throw new RuntimeException('Cannot create campaign "' . $campaignName . '" — missing ad_groups or final_url.');
+        }
+
+        // 1. Budget.
+        $budgetService = $client->getCampaignBudgetServiceClient();
+        $budget = new CampaignBudget([
+            'name' => $campaignName . ' - Budget - ' . bin2hex(random_bytes(4)),
+            'amount_micros' => (int) round($dailyBudget * 1_000_000),
+            'delivery_method' => BudgetDeliveryMethod::STANDARD,
+            'explicitly_shared' => false,
+        ]);
+        $budgetOperation = new CampaignBudgetOperation();
+        $budgetOperation->setCreate($budget);
+        $budgetResponse = $budgetService->mutateCampaignBudgets(new MutateCampaignBudgetsRequest([
+            'customer_id' => (string) $customerId,
+            'operations' => [$budgetOperation],
+        ]));
+        $budgetResourceName = $budgetResponse->getResults()[0]->getResourceName();
+
+        // 2. Campaign — always PAUSED, Search only, Manual CPC.
+        $campaignService = $client->getCampaignServiceClient();
+        $campaign = new Campaign([
+            'name' => $campaignName,
+            'status' => CampaignStatus::PAUSED,
+            'advertising_channel_type' => AdvertisingChannelType::SEARCH,
+            'campaign_budget' => $budgetResourceName,
+            'manual_cpc' => new ManualCpc(),
+            'network_settings' => new NetworkSettings([
+                'target_google_search' => true,
+                'target_search_network' => false,
+                'target_content_network' => false,
+                'target_partner_search_network' => false,
+            ]),
+        ]);
+        $campaignOperation = new CampaignOperation();
+        $campaignOperation->setCreate($campaign);
+        $campaignResponse = $campaignService->mutateCampaigns(new MutateCampaignsRequest([
+            'customer_id' => (string) $customerId,
+            'operations' => [$campaignOperation],
+        ]));
+        $campaignResourceName = $campaignResponse->getResults()[0]->getResourceName();
+
+        // 3. Proximity location targeting — one 15km-radius criterion per
+        // city, so all 61 cities are targeted on every service campaign.
+        $criterionService = $client->getCampaignCriterionServiceClient();
+        $locationOperations = [];
+        foreach ($cityCentres as $city) {
+            $criterion = new CampaignCriterion([
+                'campaign' => $campaignResourceName,
+                'proximity' => new ProximityInfo([
+                    'geo_point' => new GeoPointInfo([
+                        'latitude_in_micro_degrees' => (int) round(((float) $city['lat']) * 1_000_000),
+                        'longitude_in_micro_degrees' => (int) round(((float) $city['lng']) * 1_000_000),
+                    ]),
+                    'radius' => 15,
+                    'radius_units' => ProximityRadiusUnits::KILOMETERS,
+                ]),
+            ]);
+            $operation = new CampaignCriterionOperation();
+            $operation->setCreate($criterion);
+            $locationOperations[] = $operation;
+        }
+        $criterionService->mutateCampaignCriteria(new MutateCampaignCriteriaRequest([
+            'customer_id' => (string) $customerId,
+            'operations' => $locationOperations,
+        ]));
+
+        // 4. All 8 ad groups in one batch.
+        $adGroupService = $client->getAdGroupServiceClient();
+        $adGroupOperations = [];
+        foreach ($adGroupSpecs as $spec) {
+            $adGroup = new AdGroup([
+                'name' => (string) $spec['ad_group_name'],
+                'campaign' => $campaignResourceName,
+                'status' => AdGroupStatus::ENABLED, // harmless while the campaign itself is PAUSED
+                'type' => AdGroupType::SEARCH_STANDARD,
+            ]);
+            $operation = new AdGroupOperation();
+            $operation->setCreate($adGroup);
+            $adGroupOperations[] = $operation;
+        }
+        $adGroupResponse = $adGroupService->mutateAdGroups(new MutateAdGroupsRequest([
+            'customer_id' => (string) $customerId,
+            'operations' => $adGroupOperations,
+        ]));
+        $adGroupResourceNames = [];
+        foreach ($adGroupResponse->getResults() as $i => $result) {
+            $adGroupResourceNames[$i] = $result->getResourceName();
+        }
+
+        // 5. Keywords for every ad group, in one batch.
+        $criterionOperations = [];
+        foreach ($adGroupSpecs as $i => $spec) {
+            foreach ($spec['keywords'] ?? [] as $keyword) {
+                $text = (string) ($keyword['text'] ?? '');
+                if ($text === '') {
+                    continue;
+                }
+                $criterion = new AdGroupCriterion([
+                    'ad_group' => $adGroupResourceNames[$i],
+                    'status' => AdGroupCriterionStatus::ENABLED,
+                    'keyword' => new KeywordInfo([
+                        'text' => $text,
+                        'match_type' => KeywordMatchType::value((string) ($keyword['match_type'] ?? 'PHRASE')),
+                    ]),
+                ]);
+                $operation = new AdGroupCriterionOperation();
+                $operation->setCreate($criterion);
+                $criterionOperations[] = $operation;
+            }
+        }
+        if ($criterionOperations !== []) {
+            $client->getAdGroupCriterionServiceClient()->mutateAdGroupCriteria(new MutateAdGroupCriteriaRequest([
+                'customer_id' => (string) $customerId,
+                'operations' => $criterionOperations,
+            ]));
+        }
+
+        // 6. One RSA per ad group, in one batch.
+        $adOperations = [];
+        foreach ($adGroupSpecs as $i => $spec) {
+            $headlines = $spec['headlines'] ?? [];
+            $descriptions = $spec['descriptions'] ?? [];
+            if (count($headlines) < 3 || count($descriptions) < 2) {
+                continue; // not enough surviving templates for this vehicle/service pair — skip, don't fail the whole campaign
+            }
+            $ad = new Ad([
+                'final_urls' => [$finalUrl],
+                'responsive_search_ad' => new ResponsiveSearchAdInfo([
+                    'headlines' => array_map(fn (string $h): AdTextAsset => new AdTextAsset(['text' => $h]), $headlines),
+                    'descriptions' => array_map(fn (string $d): AdTextAsset => new AdTextAsset(['text' => $d]), $descriptions),
+                ]),
+            ]);
+            $adGroupAd = new AdGroupAd([
+                'ad_group' => $adGroupResourceNames[$i],
+                'status' => AdGroupAdStatus::ENABLED,
+                'ad' => $ad,
+            ]);
+            $operation = new AdGroupAdOperation();
+            $operation->setCreate($adGroupAd);
+            $adOperations[] = $operation;
+        }
+        if ($adOperations !== []) {
+            $client->getAdGroupAdServiceClient()->mutateAdGroupAds(new MutateAdGroupAdsRequest([
+                'customer_id' => (string) $customerId,
+                'operations' => $adOperations,
+            ]));
+        }
+
+        return [
+            'resource_id' => $campaignResourceName,
+            'action' => 'service_campaign_created',
+            'previous_state' => null,
+            'created' => [
+                'campaign' => $campaignResourceName,
+                'budget' => $budgetResourceName,
+                'ad_groups' => $adGroupResourceNames,
+                'cities_targeted' => count($cityCentres),
+                'ads_created' => count($adOperations),
+                'status' => 'PAUSED',
+            ],
+            'still_needed_before_enabling' => [
+                'Review and add negative keywords (see negative_keywords_suggested on this proposal — not applied automatically).',
+                'Spot-check a few ad groups\' keywords and ad copy before enabling.',
+                'Switch campaign status to ENABLED in the Google Ads UI once satisfied.',
+            ],
+        ];
     }
 
     private function createConversionAction(array $change): array
