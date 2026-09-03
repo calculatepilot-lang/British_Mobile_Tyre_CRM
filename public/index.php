@@ -692,6 +692,10 @@ if ($path === '/changes') {
             : '—';
         $rows.='<tr><td>'.h($c['change_type']).'</td><td>'.h($c['resource_name']?:'—').'</td><td>'.h($c['reason']).'</td><td>'.h($c['risk_level']).'</td><td>'.statusBadge($c['status']).'</td><td>'.h($c['created_at']).'</td><td>'.$actions.'</td></tr>';
 
+        if ($c['status'] === 'failed' && !empty($c['review_note'])) {
+            $rows .= '<tr><td colspan="7" style="background:#FFF0F0;padding:12px 14px;color:#7A1F1F"><strong>Failure reason:</strong> '.h($c['review_note']).'</td></tr>';
+        }
+
         if ($c['change_type'] === 'create_campaign' && $c['status'] === 'executed' && $c['before_state']) {
             $decoded = json_decode((string) $c['before_state'], true);
             $checklist = $decoded['still_needed_before_enabling'] ?? null;
