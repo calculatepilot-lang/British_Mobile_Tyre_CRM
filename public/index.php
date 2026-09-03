@@ -33,6 +33,29 @@ $path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
 function h(mixed $value): string { return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8'); }
+
+// Read-only, token-authenticated JSON endpoint for external scripts (e.g. a
+// Google Ads Script, which runs on Google's servers and can't hold a CRM
+// login session) to fetch the current city list without hard-coding it.
+// Set CRM_API_TOKEN in .env — this endpoint refuses to respond without a
+// matching token. GET only; never mutates anything.
+if ($path === '/api/cities.json') {
+    header('Content-Type: application/json');
+    $expectedToken = envValue('CRM_API_TOKEN', '');
+    $providedToken = $_GET['token'] ?? '';
+    if ($expectedToken === '' || !hash_equals($expectedToken, (string) $providedToken)) {
+        http_response_code(401);
+        echo json_encode(['error' => 'Invalid or missing token']);
+        exit;
+    }
+    $cities = require dirname(__DIR__) . '/config/cities.php';
+    $out = array_map(
+        fn (array $c): array => ['name' => $c['name'], 'lat' => $c['lat'], 'lng' => $c['lng']],
+        $cities['cities']
+    );
+    echo json_encode(['cities' => $out], JSON_PRETTY_PRINT);
+    exit;
+}
 function redirect(string $to): never { header('Location: ' . $to, true, 302); exit; }
 
 /** Customer name if we have one, otherwise a stable "Customer #<id>" using the lead's own numeric id. */
