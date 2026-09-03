@@ -313,6 +313,34 @@ if (preg_match('#^/changes/([0-9a-f-]{36})/reject$#', $path, $m) && $method === 
     catch (\Throwable $e) { render('Google Ads', '<h1>Google Ads</h1><p class="notice">'.h($e->getMessage()).'</p><p><a href="/changes">Back to changes</a></p>', $user); }
     redirect('/changes');
 }
+if ($path === '/changes/bulk-approve' && $method === 'POST') {
+    if (!AuthService::verifyCsrf($_POST['csrf'] ?? null)) { http_response_code(419); render('Invalid request', '<h1>Invalid request</h1>', $user); }
+    $approvals = new ApprovalService();
+    $ok = 0; $failed = 0;
+    foreach ((array) ($_POST['change_uuid'] ?? []) as $uuid) {
+        if (!preg_match('#^[0-9a-f-]{36}$#', (string) $uuid)) { continue; }
+        try { $approvals->approve((string) $uuid, (string) $user['email']); $ok++; }
+        catch (\Throwable $e) { $failed++; }
+    }
+    redirect('/changes?bulk_approved=' . $ok . '&bulk_approve_failed=' . $failed);
+}
+if ($path === '/changes/bulk-reject' && $method === 'POST') {
+    if (!AuthService::verifyCsrf($_POST['csrf'] ?? null)) { http_response_code(419); render('Invalid request', '<h1>Invalid request</h1>', $user); }
+    $approvals = new ApprovalService();
+    $ok = 0; $failed = 0;
+    foreach ((array) ($_POST['change_uuid'] ?? []) as $uuid) {
+        if (!preg_match('#^[0-9a-f-]{36}$#', (string) $uuid)) { continue; }
+        try { $approvals->reject((string) $uuid); $ok++; }
+        catch (\Throwable $e) { $failed++; }
+    }
+    redirect('/changes?bulk_rejected=' . $ok . '&bulk_reject_failed=' . $failed);
+}
+if ($path === '/changes/clear-failed' && $method === 'POST') {
+    if (!AuthService::verifyCsrf($_POST['csrf'] ?? null)) { http_response_code(419); render('Invalid request', '<h1>Invalid request</h1>', $user); }
+    $stmt = Database::connection()->prepare("DELETE FROM automation_changes WHERE status IN ('failed','rejected')");
+    $stmt->execute();
+    redirect('/changes?cleared=' . $stmt->rowCount());
+}
 if ($path === '/changes/run-approved' && $method === 'POST') {
     if (!AuthService::verifyCsrf($_POST['csrf'] ?? null)) { http_response_code(419); render('Invalid request', '<h1>Invalid request</h1>', $user); }
     try {
@@ -684,16 +712,21 @@ if ($path === '/tools/google-ads-test') {
     render('Google Ads test', $body, $user);
 }
 if ($path === '/changes') {
-    $rows=''; $approvedCount=0; foreach((new ApprovalService())->list(100) as $c){
+    $rows=''; $approvedCount=0; $selectableCount=0; foreach((new ApprovalService())->list(100) as $c){
         if ($c['status']==='planned') $approvedCount++;
+        $isSelectable = in_array($c['status'], ['pending_approval','planned'], true);
+        if ($isSelectable) $selectableCount++;
+        $checkbox = $isSelectable
+            ? '<input type="checkbox" class="bulk-checkbox" name="change_uuid[]" value="'.h($c['change_uuid']).'">'
+            : '';
         $actions = $c['status']==='pending_approval'
             ? '<form method="post" action="/changes/'.h($c['change_uuid']).'/approve" style="display:inline"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><button>Approve</button></form> '
               .'<form method="post" action="/changes/'.h($c['change_uuid']).'/reject" style="display:inline"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><button style="background:#b42318">Reject</button></form>'
             : '—';
-        $rows.='<tr><td>'.h($c['change_type']).'</td><td>'.h($c['resource_name']?:'—').'</td><td>'.h($c['reason']).'</td><td>'.h($c['risk_level']).'</td><td>'.statusBadge($c['status']).'</td><td>'.h($c['created_at']).'</td><td>'.$actions.'</td></tr>';
+        $rows.='<tr><td>'.$checkbox.'</td><td>'.h($c['change_type']).'</td><td>'.h($c['resource_name']?:'—').'</td><td>'.h($c['reason']).'</td><td>'.h($c['risk_level']).'</td><td>'.statusBadge($c['status']).'</td><td>'.h($c['created_at']).'</td><td>'.$actions.'</td></tr>';
 
         if ($c['status'] === 'failed' && !empty($c['review_note'])) {
-            $rows .= '<tr><td colspan="7" style="background:#FFF0F0;padding:12px 14px;color:#7A1F1F"><strong>Failure reason:</strong> '.h($c['review_note']).'</td></tr>';
+            $rows .= '<tr><td colspan="8" style="background:#FFF0F0;padding:12px 14px;color:#7A1F1F"><strong>Failure reason:</strong> '.h($c['review_note']).'</td></tr>';
         }
 
         if ($c['change_type'] === 'create_campaign' && $c['status'] === 'executed' && $c['before_state']) {
@@ -702,7 +735,7 @@ if ($path === '/changes') {
             if ($checklist) {
                 $items = '';
                 foreach ($checklist as $item) { $items .= '<li>'.h($item).'</li>'; }
-                $rows .= '<tr><td colspan="7" style="background:#FFF4E0;padding:12px 14px"><strong>Campaign created PAUSED — before enabling in Google Ads:</strong><ul style="margin:8px 0 0;padding-left:20px;color:var(--text)">'.$items.'</ul></td></tr>';
+                $rows .= '<tr><td colspan="8" style="background:#FFF4E0;padding:12px 14px"><strong>Campaign created PAUSED — before enabling in Google Ads:</strong><ul style="margin:8px 0 0;padding-left:20px;color:var(--text)">'.$items.'</ul></td></tr>';
             }
         }
 
@@ -710,7 +743,7 @@ if ($path === '/changes') {
             $decoded = json_decode((string) $c['after_state'], true);
             $headlinesPreview = implode(', ', array_slice($decoded['headlines'] ?? [], 0, 4));
             $keywordsPreview = implode(', ', array_map(fn($k) => $k['text'] ?? '', array_slice($decoded['keywords'] ?? [], 0, 4)));
-            $rows .= '<tr><td colspan="7" style="background:#F5F7FF;padding:12px 14px;color:var(--text)"><strong>Proposed headlines:</strong> '.h($headlinesPreview).'&hellip;<br><strong>Proposed keywords (phrase match):</strong> '.h($keywordsPreview).'&hellip;<br><strong>Final URL:</strong> '.h($decoded['final_url']??'').'</td></tr>';
+            $rows .= '<tr><td colspan="8" style="background:#F5F7FF;padding:12px 14px;color:var(--text)"><strong>Proposed headlines:</strong> '.h($headlinesPreview).'&hellip;<br><strong>Proposed keywords (phrase match):</strong> '.h($keywordsPreview).'&hellip;<br><strong>Final URL:</strong> '.h($decoded['final_url']??'').'</td></tr>';
         }
 
         if ($c['change_type'] === 'create_service_campaign' && in_array($c['status'], ['pending_approval','planned'], true) && $c['after_state']) {
@@ -718,12 +751,12 @@ if ($path === '/changes') {
             $adGroupNames = implode(', ', array_map(fn($ag) => $ag['ad_group_name'] ?? '', $decoded['ad_groups'] ?? []));
             $firstAdGroup = $decoded['ad_groups'][0] ?? null;
             $sampleKeywords = $firstAdGroup ? implode(', ', array_map(fn($k) => $k['text'] ?? '', array_slice($firstAdGroup['keywords'] ?? [], 0, 6))) : '';
-            $rows .= '<tr><td colspan="7" style="background:#F5F7FF;padding:12px 14px;color:var(--text)"><strong>8 ad groups:</strong> '.h($adGroupNames).'<br><strong>Sample keywords ('.h($firstAdGroup['ad_group_name']??'').'):</strong> '.h($sampleKeywords).'&hellip;<br><strong>Cities targeted:</strong> '.count($decoded['city_centres']??[]).'&nbsp; <strong>Daily budget:</strong> '.h(number_format((float)($decoded['suggested_daily_budget']??0),2)).'&nbsp; <strong>Final URL:</strong> '.h($decoded['final_url']??'').'</td></tr>';
+            $rows .= '<tr><td colspan="8" style="background:#F5F7FF;padding:12px 14px;color:var(--text)"><strong>8 ad groups:</strong> '.h($adGroupNames).'<br><strong>Sample keywords ('.h($firstAdGroup['ad_group_name']??'').'):</strong> '.h($sampleKeywords).'&hellip;<br><strong>Cities targeted:</strong> '.count($decoded['city_centres']??[]).'&nbsp; <strong>Daily budget:</strong> '.h(number_format((float)($decoded['suggested_daily_budget']??0),2)).'&nbsp; <strong>Final URL:</strong> '.h($decoded['final_url']??'').'</td></tr>';
         }
 
         if ($c['change_type'] === 'create_conversion_action' && in_array($c['status'], ['pending_approval','planned'], true) && $c['after_state']) {
             $decoded = json_decode((string) $c['after_state'], true);
-            $rows .= '<tr><td colspan="7" style="background:#F5F7FF;padding:12px 14px;color:var(--text)"><strong>Purpose:</strong> '.h($decoded['purpose']??'').'<br><strong>Type:</strong> '.h($decoded['type']??'').'&nbsp; <strong>Category:</strong> '.h($decoded['category']??'').'&nbsp; <strong>Primary:</strong> '.((!empty($decoded['primary']))?'Yes':'No').'</td></tr>';
+            $rows .= '<tr><td colspan="8" style="background:#F5F7FF;padding:12px 14px;color:var(--text)"><strong>Purpose:</strong> '.h($decoded['purpose']??'').'<br><strong>Type:</strong> '.h($decoded['type']??'').'&nbsp; <strong>Category:</strong> '.h($decoded['category']??'').'&nbsp; <strong>Primary:</strong> '.((!empty($decoded['primary']))?'Yes':'No').'</td></tr>';
         }
     }
     $flash='';
@@ -750,7 +783,43 @@ if ($path === '/changes') {
     $scanServiceCampaignsButton = '<form method="post" action="/changes/scan-service-campaigns"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><button style="background:var(--surface);color:var(--text);border:1.5px solid var(--border)">Build 5 service campaigns (40 ad groups)</button></form>';
     $scanConversionsButton = '<form method="post" action="/changes/scan-conversions"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><button style="background:var(--surface);color:var(--text);border:1.5px solid var(--border)">Scan for missing conversion actions</button></form>';
     $analyticsButton = '<form method="post" action="/changes/collect-analytics"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><button style="background:var(--surface);color:var(--text);border:1.5px solid var(--border)">View Ad Analytics (yesterday)</button></form>';
-    render('Google Ads','<div class="toolbar"><div><h1>Google Ads</h1><p>Automation mode: <strong>'.h(envValue('AUTOMATION_MODE','audit_only')).'</strong>. Approving a change only marks it ready — nothing reaches Google Ads until you click below, so you control exactly when each batch of changes goes live. Campaigns are always created PAUSED and never auto-enabled.</p></div><div style="display:flex;gap:10px;flex-wrap:wrap">'.$scanServiceCampaignsButton.$scanCampaignsButton.$scanAdGroupsButton.$scanConversionsButton.$analyticsButton.$runButton.'</div></div>'.$flash.'<table><thead><tr><th>Type</th><th>Resource</th><th>Reason</th><th>Risk</th><th>Status</th><th>Created</th><th>Action</th></tr></thead><tbody>'.($rows?:'<tr><td colspan="7">No automation changes yet.</td></tr>').'</tbody></table>',$user);
+    if (isset($_GET['bulk_approved']) || isset($_GET['bulk_approve_failed'])) {
+        $flash.='<p class="notice" style="background:#e6f4ea;color:#1e4620;border-color:#b7dfc0">Approved '.(int)($_GET['bulk_approved']??0).' change(s).'.((int)($_GET['bulk_approve_failed']??0) > 0 ? ' '.(int)$_GET['bulk_approve_failed'].' could not be approved.' : '').'</p>';
+    }
+    if (isset($_GET['bulk_rejected']) || isset($_GET['bulk_reject_failed'])) {
+        $flash.='<p class="notice" style="background:#e6f4ea;color:#1e4620;border-color:#b7dfc0">Declined '.(int)($_GET['bulk_rejected']??0).' change(s).'.((int)($_GET['bulk_reject_failed']??0) > 0 ? ' '.(int)$_GET['bulk_reject_failed'].' could not be declined.' : '').'</p>';
+    }
+    if (isset($_GET['cleared'])) {
+        $flash.='<p class="notice" style="background:#e6f4ea;color:#1e4620;border-color:#b7dfc0">Cleared '.(int)$_GET['cleared'].' failed/declined change(s) from the list.</p>';
+    }
+    $clearFailedButton = '<form method="post" action="/changes/clear-failed" onsubmit="return confirm(\'Remove all failed and declined changes from this list? This only clears the list — it does not affect anything in Google Ads.\')"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><button style="background:var(--surface);color:var(--text);border:1.5px solid var(--border)">Clear failed/declined</button></form>';
+    $bulkScript = '<script>
+function bmtToggleAll(box){document.querySelectorAll(".bulk-checkbox").forEach(c=>c.checked=box.checked);}
+function bmtBulkSubmit(action, confirmMsg){
+  var boxes = document.querySelectorAll(".bulk-checkbox:checked");
+  if (boxes.length === 0) { alert("Select at least one change first."); return; }
+  if (confirmMsg && !confirm(confirmMsg)) { return; }
+  var f = document.createElement("form");
+  f.method = "post"; f.action = action;
+  var csrf = document.createElement("input");
+  csrf.type = "hidden"; csrf.name = "csrf"; csrf.value = '.json_encode(AuthService::csrfToken()).';
+  f.appendChild(csrf);
+  boxes.forEach(function(b){
+    var i = document.createElement("input");
+    i.type = "hidden"; i.name = "change_uuid[]"; i.value = b.value;
+    f.appendChild(i);
+  });
+  document.body.appendChild(f);
+  f.submit();
+}
+</script>';
+    render('Google Ads','<div class="toolbar"><div><h1>Google Ads</h1><p>Automation mode: <strong>'.h(envValue('AUTOMATION_MODE','audit_only')).'</strong>. Approving a change only marks it ready — nothing reaches Google Ads until you click below, so you control exactly when each batch of changes goes live. Campaigns are always created PAUSED and never auto-enabled.</p></div><div style="display:flex;gap:10px;flex-wrap:wrap">'.$scanServiceCampaignsButton.$scanCampaignsButton.$scanAdGroupsButton.$scanConversionsButton.$analyticsButton.$clearFailedButton.$runButton.'</div></div>'.$flash
+        .$bulkScript
+        .'<div style="display:flex;gap:10px;margin-bottom:10px">'
+        .'<button type="button" onclick="bmtBulkSubmit(\'/changes/bulk-approve\', null)">Approve selected</button>'
+        .'<button type="button" onclick="bmtBulkSubmit(\'/changes/bulk-reject\', \'Decline all selected changes?\')" style="background:#b42318">Decline selected</button>'
+        .'</div>'
+        .'<table><thead><tr><th><input type="checkbox" onclick="bmtToggleAll(this)" title="Select all"'.($selectableCount===0?' disabled':'').'></th><th>Type</th><th>Resource</th><th>Reason</th><th>Risk</th><th>Status</th><th>Created</th><th>Action</th></tr></thead><tbody>'.($rows?:'<tr><td colspan="8">No automation changes yet.</td></tr>').'</tbody></table>',$user);
 }
 
 $data=$leads->dashboard(); $t=$data['today']; $pendingApprovals=(new \BMT\Dashboard\DashboardService(new Database()))->overview()['pending_approvals'] ?? 0; $cards='<div class="grid"><div class="card"><div>New leads today</div><div class="metric">'.h($t['total']??0).'</div></div><div class="card"><div>Qualified today</div><div class="metric">'.h($t['qualified']??0).'</div></div><div class="card"><div>Completed today</div><div class="metric">'.h($t['completed']??0).'</div></div><div class="card"><div>Completed revenue today</div><div class="metric">£'.h(number_format((float)($t['revenue']??0),2)).'</div></div><div class="card"><a href="/changes" style="text-decoration:none;color:inherit"><div>Pending approvals</div><div class="metric">'.h($pendingApprovals).'</div></a></div></div>';
