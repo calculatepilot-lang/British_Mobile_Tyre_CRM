@@ -11,6 +11,7 @@ use Google\Ads\GoogleAds\V25\Enums\ConversionActionStatusEnum\ConversionActionSt
 use Google\Ads\GoogleAds\V25\Enums\ConversionActionTypeEnum\ConversionActionType;
 use Google\Ads\GoogleAds\V25\Enums\CampaignStatusEnum\CampaignStatus;
 use Google\Ads\GoogleAds\V25\Enums\AdvertisingChannelTypeEnum\AdvertisingChannelType;
+use Google\Ads\GoogleAds\V25\Enums\EuPoliticalAdvertisingStatusEnum\EuPoliticalAdvertisingStatus;
 use Google\Ads\GoogleAds\V25\Enums\BudgetDeliveryMethodEnum\BudgetDeliveryMethod;
 use Google\Ads\GoogleAds\V25\Enums\AdGroupStatusEnum\AdGroupStatus;
 use Google\Ads\GoogleAds\V25\Enums\AdGroupTypeEnum\AdGroupType;
@@ -224,6 +225,11 @@ final class ChangeExecutor
             'advertising_channel_type' => AdvertisingChannelType::SEARCH,
             'campaign_budget' => $budgetResourceName,
             'manual_cpc' => new ManualCpc(),
+            // Required by Google Ads API as of v25 (EU political advertising
+            // transparency rules) on EVERY campaign creation, globally —
+            // not just EU accounts. None of this account's campaigns are
+            // political ads.
+            'contains_eu_political_advertising' => EuPoliticalAdvertisingStatus::DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING,
             'network_settings' => new NetworkSettings([
                 'target_google_search' => true,
                 'target_search_network' => false,
@@ -452,6 +458,11 @@ final class ChangeExecutor
             'advertising_channel_type' => AdvertisingChannelType::SEARCH,
             'campaign_budget' => $budgetResourceName,
             'manual_cpc' => new ManualCpc(),
+            // Required by Google Ads API as of v25 (EU political advertising
+            // transparency rules) on EVERY campaign creation, globally —
+            // not just EU accounts. None of this account's campaigns are
+            // political ads.
+            'contains_eu_political_advertising' => EuPoliticalAdvertisingStatus::DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING,
             'network_settings' => new NetworkSettings([
                 'target_google_search' => true,
                 'target_search_network' => false,
