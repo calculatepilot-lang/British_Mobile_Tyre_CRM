@@ -5,36 +5,49 @@
  * NOT on the CRM server — it executes on Google's own infrastructure with
  * direct access to your live Ads account via the global `AdsApp` object.
  *
- * IMPORTANT — verification caveat (read before running):
- * `AdsApp` only exists inside a live Google Ads account's Script runtime.
- * There is no way to install it as a package or execute it outside that
- * environment, so — unlike the PHP changes made to the CRM this session,
- * which were verified by actually installing the real Ads API library and
- * instantiating real objects — this script could NOT be executed or
- * verified end-to-end before being handed to you. It is written against
- * Google's documented, stable Ads Scripts method signatures, but:
- *   1. Run it in PREVIEW mode first (the "Preview" button in the Scripts
- *      editor simulates the run and shows what WOULD happen, including
- *      full Logger output, without creating anything for real).
- *   2. Methods flagged with a "VERIFY" comment below are the ones most
- *      likely to have shifted between Ads Scripts API versions — check
- *      them against https://developers.google.com/google-ads/scripts/docs/reference
- *      if Preview mode reports an error on that line.
+ * REVISION NOTE (read this first):
+ * The first version of this script used AdsApp.newCampaignBuilder() /
+ * newAdGroupBuilder() / newKeywordBuilder() / responsiveSearchAdBuilder(),
+ * which turned out to not exist in the current API — confirmed by running
+ * it in Preview mode, which threw "AdsApp.newCampaignBuilder is not a
+ * function" (the CRM city-fetch step worked perfectly; only the campaign-
+ * creation step was wrong). This version replaces every creation call with
+ * AdsApp.mutate(), which IS the current, documented way to create
+ * campaigns/ad groups/keywords/ads in Google Ads Scripts — confirmed by
+ * reading Google's current Scripts documentation
+ * (developers.google.com/google-ads/scripts/docs/features/mutate and
+ * .../concepts/mutate), not assumed from memory a second time.
+ *
+ * mutate() takes the same resource field names/shapes as the real Google
+ * Ads API (camelCase in Scripts, snake_case in the PHP library — both
+ * accepted) — which is exactly what was already verified working, live,
+ * in this project's PHP CRM (app/Execution/ChangeExecutor.php) this same
+ * session, including the containsEuPoliticalAdvertising field that a real
+ * live run surfaced as required. That field is included below for the
+ * same reason.
+ *
+ * IMPORTANT — this is still less verified than the PHP work:
+ * I have no way to execute AdsApp code myself (it only exists inside a
+ * live Ads account's Script runtime). This version is built from Google's
+ * current official documentation and examples, not just the previous
+ * version's assumptions, but you should still:
+ *   1. Run PREVIEW first (simulates without creating anything).
+ *   2. If any single mutate() call reports an error via
+ *      result.getErrorMessages(), that call's exact request shape is
+ *      logged — paste it back and I'll fix the specific field.
  *
  * HIERARCHY
  * =========
  * 1 Campaign ("BMT | Search | All Services")
- *   -> Proximity location targeting, one circle per CRM city (NOT one
- *      campaign per city — this script deliberately keeps everything in
- *      a single campaign, per spec)
+ *   -> Proximity location targeting, one circle per CRM city (single
+ *      campaign, not one per city — per spec)
  *   -> 5 Services x N cities = one Ad Group each, named "{Service} - {City}"
  *        -> Keywords: Exact + Phrase match only (Service+City combinations)
  *        -> One Responsive Search Ad (headlines/descriptions generated
  *           per service+city, filtered to Google's length limits)
  *
- * The campaign is always left PAUSED after creation — nothing spends
- * until a human reviews it and enables it manually in the Ads UI, the
- * same safety pattern used throughout the rest of this project.
+ * The campaign is always created PAUSED — nothing spends until a human
+ * reviews it and enables it manually in the Ads UI.
  */
 
 // ============================================================================
@@ -45,7 +58,6 @@ var CONFIG = {
   DAILY_BUDGET: 5.0, // account currency, per day — TOTAL for this one campaign
   FINAL_URL: 'https://britishmobiletyres.co.uk/',
 
-  // Same 5 services already used elsewhere in this project, for consistency.
   SERVICES: [
     'Mobile Tyre Repair',
     'Mobile Tyre Replacement',
@@ -54,10 +66,6 @@ var CONFIG = {
     'Mobile Tyre Fitting',
   ],
 
-  // The CRM's read-only cities endpoint (see /api/cities.json in the CRM
-  // repo). Requires CRM_API_TOKEN to be set in the CRM's .env and the same
-  // value pasted below — this script authenticates with a shared token,
-  // not a login session, since Ads Scripts can't hold cookies.
   CRM_API_URL: 'https://ads.britishmobiletyres.co.uk/api/cities.json',
   CRM_API_TOKEN: 'PASTE_THE_SAME_TOKEN_FROM_.ENV_HERE',
 
@@ -69,6 +77,8 @@ var CONFIG = {
 // ============================================================================
 function main() {
   Logger.log('=== BMT Campaign Builder — starting ===');
+  var customerId = AdsApp.currentAccount().getCustomerId();
+  Logger.log('Running against account ' + customerId);
 
   var cities;
   try {
@@ -77,26 +87,25 @@ function main() {
     Logger.log('FATAL: could not fetch cities from CRM — aborting. ' + e);
     return;
   }
-
   if (!cities || cities.length === 0) {
     Logger.log('FATAL: CRM returned zero cities — aborting. Nothing created.');
     return;
   }
   Logger.log('Fetched ' + cities.length + ' cities from CRM.');
 
-  var campaign;
+  var campaignResourceName;
   try {
-    campaign = getOrCreateCampaign_(CONFIG.CAMPAIGN_NAME, CONFIG.DAILY_BUDGET);
+    campaignResourceName = getOrCreateCampaign_(customerId, CONFIG.CAMPAIGN_NAME, CONFIG.DAILY_BUDGET);
   } catch (e) {
     Logger.log('FATAL: could not create/find campaign — aborting. ' + e);
     return;
   }
-  if (!campaign) {
-    Logger.log('FATAL: campaign is null after getOrCreateCampaign_ — aborting.');
+  if (!campaignResourceName) {
+    Logger.log('FATAL: campaignResourceName is empty after getOrCreateCampaign_ — aborting.');
     return;
   }
 
-  applyCityTargeting_(campaign, cities);
+  applyCityTargeting_(customerId, campaignResourceName, cities);
 
   var stats = { created: 0, skipped: 0, failed: 0, copyRejected: 0 };
 
@@ -108,7 +117,7 @@ function main() {
       var adGroupName = service + ' - ' + city.name;
 
       try {
-        var result = createServiceCityAdGroup_(campaign, service, city.name, adGroupName);
+        var result = createServiceCityAdGroup_(customerId, campaignResourceName, service, city.name, adGroupName);
         if (result === 'created') stats.created++;
         else if (result === 'skipped_exists') stats.skipped++;
         else if (result === 'copy_rejected') stats.copyRejected++;
@@ -130,15 +139,9 @@ function main() {
 }
 
 // ============================================================================
-// CRM INTEGRATION
+// CRM INTEGRATION (unchanged from previous version — this part already
+// worked correctly in your Preview run: "Fetched 61 cities from CRM.")
 // ============================================================================
-
-/**
- * Fetches the live city list from the CRM's /api/cities.json endpoint.
- * Never hard-codes locations — if the CRM is unreachable or returns
- * malformed data, this throws so main() aborts cleanly rather than running
- * with a stale or partial list.
- */
 function fetchCitiesFromCrm_() {
   var url = CONFIG.CRM_API_URL + '?token=' + encodeURIComponent(CONFIG.CRM_API_TOKEN);
   Logger.log('Fetching cities from CRM: ' + CONFIG.CRM_API_URL);
@@ -166,7 +169,6 @@ function fetchCitiesFromCrm_() {
     throw new Error('CRM API response missing expected "cities" array.');
   }
 
-  // Validate each city has the fields we need before trusting it downstream.
   var valid = [];
   for (var i = 0; i < body.cities.length; i++) {
     var c = body.cities[i];
@@ -181,15 +183,37 @@ function fetchCitiesFromCrm_() {
 }
 
 // ============================================================================
+// MUTATE HELPER
+// ============================================================================
+
+/**
+ * Wraps AdsApp.mutate() with consistent error surfacing. Throws with the
+ * full request JSON and error messages on failure, so a failing call's
+ * exact shape is always visible in the log — never a silent no-op.
+ */
+function mutateOrThrow_(operation, label) {
+  var result = AdsApp.mutate(operation);
+  var errors = result.getErrorMessages();
+  if (errors && errors.length > 0) {
+    throw new Error(
+      label + ' failed: ' + errors.join('; ') +
+      ' | Request was: ' + JSON.stringify(operation)
+    );
+  }
+  return result;
+}
+
+// ============================================================================
 // CAMPAIGN
 // ============================================================================
 
 /**
- * Returns the existing campaign by exact name if one already exists
- * (making this script safe to re-run without creating duplicates), or
- * creates a new one — PAUSED, Search-only, Manual CPC — if not.
+ * Returns the resource name of the existing campaign if one already
+ * exists with this exact name (safe to re-run without duplicating), or
+ * creates a new budget + campaign — PAUSED, Search-only, Manual CPC — if
+ * not, returning the new campaign's resource name.
  */
-function getOrCreateCampaign_(name, dailyBudget) {
+function getOrCreateCampaign_(customerId, name, dailyBudget) {
   var iterator = AdsApp.campaigns()
     .withCondition('campaign.name = "' + name.replace(/"/g, '\\"') + '"')
     .get();
@@ -197,55 +221,78 @@ function getOrCreateCampaign_(name, dailyBudget) {
   if (iterator.hasNext()) {
     var existing = iterator.next();
     Logger.log('Campaign "' + name + '" already exists (id ' + existing.getId() + ') — reusing it, not creating a duplicate.');
-    return existing;
+    return 'customers/' + customerId + '/campaigns/' + existing.getId();
   }
 
   Logger.log('Creating new campaign "' + name + '" with daily budget ' + dailyBudget + '.');
 
-  // VERIFY: .withBudget() on newCampaignBuilder() sets a standard (non-
-  // shared) budget of this amount per day, in the account's currency.
-  // Confirm this is still the current method name/signature in Ads
-  // Scripts' reference docs at the time you run this.
-  var campaignOperation = AdsApp.newCampaignBuilder()
-    .withName(name)
-    .withBudget(dailyBudget)
-    .withNetworks(['GOOGLE_SEARCH']) // Search only — never Display/Search partners
-    .build();
+  var budgetResult = mutateOrThrow_({
+    campaignBudgetOperation: {
+      create: {
+        amountMicros: Math.round(dailyBudget * 1000000),
+        explicitlyShared: false,
+      },
+    },
+  }, 'Campaign budget creation');
+  var budgetResourceName = budgetResult.getResourceName();
+  Logger.log('Created budget: ' + budgetResourceName);
 
-  if (!campaignOperation.isSuccessful()) {
-    throw new Error('Campaign creation failed: ' + JSON.stringify(campaignOperation.getErrors()));
-  }
+  var campaignResult = mutateOrThrow_({
+    campaignOperation: {
+      create: {
+        name: name,
+        status: 'PAUSED',
+        advertisingChannelType: 'SEARCH',
+        campaignBudget: budgetResourceName,
+        manualCpc: {},
+        networkSettings: {
+          targetGoogleSearch: true,
+          targetSearchNetwork: false,
+          targetContentNetwork: false,
+          targetPartnerSearchNetwork: false,
+        },
+        // Required by the Google Ads API (EU political advertising
+        // transparency rules) on every campaign creation, globally — not
+        // just EU accounts. Confirmed required by an actual live run
+        // during this project's PHP work this session.
+        containsEuPoliticalAdvertising: 'DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING',
+      },
+    },
+  }, 'Campaign creation');
 
-  var campaign = campaignOperation.getResult();
+  var campaignResourceName = campaignResult.getResourceName();
+  Logger.log('Campaign "' + name + '" created: ' + campaignResourceName + ' (PAUSED).');
 
-  // Always leave it PAUSED — nothing spends until a human reviews and
-  // enables it manually. This mirrors the safety pattern used everywhere
-  // else in this project.
-  campaign.pause();
-  Logger.log('Campaign "' + name + '" created (id ' + campaign.getId() + ') and set to PAUSED.');
-
-  return campaign;
+  return campaignResourceName;
 }
 
 /**
  * Adds one proximity location-targeting circle per CRM city to the
- * campaign. Skips (logs, doesn't throw) any city that fails to add, so one
- * bad coordinate doesn't abort the whole targeting pass.
+ * campaign via campaignCriterionOperation. Skips (logs, doesn't throw)
+ * any city that fails, so one bad coordinate doesn't abort the whole pass.
  */
-function applyCityTargeting_(campaign, cities) {
+function applyCityTargeting_(customerId, campaignResourceName, cities) {
   var added = 0;
   var failed = 0;
 
   for (var i = 0; i < cities.length; i++) {
     var city = cities[i];
     try {
-      // VERIFY: addProximity(latitude, longitude, radius) — confirm the
-      // radius unit (miles vs km) and whether a 4th unit argument is
-      // required in the current Ads Scripts version. As documented at the
-      // time this was written, the 3-argument form uses miles by default;
-      // adjust PROXIMITY_RADIUS_KM/conversion below if that's changed.
-      var radiusMiles = CONFIG.PROXIMITY_RADIUS_KM * 0.621371;
-      campaign.addProximity(city.lat, city.lng, radiusMiles);
+      mutateOrThrow_({
+        campaignCriterionOperation: {
+          create: {
+            campaign: campaignResourceName,
+            proximity: {
+              geoPoint: {
+                latitudeInMicroDegrees: Math.round(city.lat * 1000000),
+                longitudeInMicroDegrees: Math.round(city.lng * 1000000),
+              },
+              radius: CONFIG.PROXIMITY_RADIUS_KM,
+              radiusUnits: 'KILOMETERS',
+            },
+          },
+        },
+      }, 'Location targeting for ' + city.name);
       added++;
     } catch (e) {
       failed++;
@@ -267,31 +314,32 @@ function applyCityTargeting_(campaign, cities) {
  *   'created'        — ad group + keywords + ad all created successfully
  *   'skipped_exists' — an ad group with this exact name already exists
  *   'copy_rejected'  — not enough valid headlines/descriptions survived
- *                      length validation to build a compliant RSA; the ad
- *                      group itself may still have been created with
- *                      keywords but WITHOUT an ad — logged clearly either way
+ *                      length validation for a compliant RSA; the ad
+ *                      group and keywords are still created either way
  */
-function createServiceCityAdGroup_(campaign, service, cityName, adGroupName) {
-  var existing = campaign.adGroups()
+function createServiceCityAdGroup_(customerId, campaignResourceName, service, cityName, adGroupName) {
+  var existing = AdsApp.adGroups()
     .withCondition('ad_group.name = "' + adGroupName.replace(/"/g, '\\"') + '"')
+    .withCondition('campaign.resource_name = "' + campaignResourceName + '"')
     .get();
   if (existing.hasNext()) {
     Logger.log('Ad group "' + adGroupName + '" already exists — skipping.');
     return 'skipped_exists';
   }
 
-  var adGroupOperation = campaign.newAdGroupBuilder()
-    .withName(adGroupName)
-    .withStatus('ENABLED') // harmless while the campaign itself is PAUSED
-    .build();
+  var adGroupResult = mutateOrThrow_({
+    adGroupOperation: {
+      create: {
+        campaign: campaignResourceName,
+        name: adGroupName,
+        status: 'ENABLED', // harmless while the campaign itself is PAUSED
+      },
+    },
+  }, 'Ad group creation for "' + adGroupName + '"');
+  var adGroupResourceName = adGroupResult.getResourceName();
+  Logger.log('Created ad group "' + adGroupName + '": ' + adGroupResourceName);
 
-  if (!adGroupOperation.isSuccessful()) {
-    throw new Error('Ad group creation failed: ' + JSON.stringify(adGroupOperation.getErrors()));
-  }
-  var adGroup = adGroupOperation.getResult();
-  Logger.log('Created ad group "' + adGroupName + '" (id ' + adGroup.getId() + ').');
-
-  addKeywords_(adGroup, service, cityName);
+  addKeywords_(adGroupResourceName, service, cityName);
 
   var copy = generateCompliantCopy_(service, cityName);
   if (copy.headlines.length < 3 || copy.descriptions.length < 2) {
@@ -304,7 +352,7 @@ function createServiceCityAdGroup_(campaign, service, cityName, adGroupName) {
     return 'copy_rejected';
   }
 
-  createResponsiveSearchAd_(adGroup, copy);
+  createResponsiveSearchAd_(adGroupResourceName, copy);
   return 'created';
 }
 
@@ -313,20 +361,29 @@ function createServiceCityAdGroup_(campaign, service, cityName, adGroupName) {
  * Broad match keywords are ever added, matching the CRM's own campaign
  * builder policy.
  */
-function addKeywords_(adGroup, service, cityName) {
+function addKeywords_(adGroupResourceName, service, cityName) {
   var baseText = service + ' ' + cityName;
-  var texts = [
-    baseText,
-    baseText + ' near me',
-  ];
+  var texts = [baseText, baseText + ' near me'];
+  var matchTypes = ['EXACT', 'PHRASE'];
 
   for (var i = 0; i < texts.length; i++) {
-    var text = texts[i];
-    try {
-      adGroup.newKeywordBuilder().withText('[' + text + ']').build(); // Exact
-      adGroup.newKeywordBuilder().withText('"' + text + '"').build(); // Phrase
-    } catch (e) {
-      Logger.log('WARNING: failed to add keyword "' + text + '" to ad group "' + adGroup.getName() + '": ' + e);
+    for (var m = 0; m < matchTypes.length; m++) {
+      try {
+        mutateOrThrow_({
+          adGroupCriterionOperation: {
+            create: {
+              adGroup: adGroupResourceName,
+              status: 'ENABLED',
+              keyword: {
+                text: texts[i],
+                matchType: matchTypes[m],
+              },
+            },
+          },
+        }, 'Keyword "' + texts[i] + '" (' + matchTypes[m] + ')');
+      } catch (e) {
+        Logger.log('WARNING: failed to add keyword "' + texts[i] + '" (' + matchTypes[m] + '): ' + e);
+      }
     }
   }
 }
@@ -336,42 +393,45 @@ function addKeywords_(adGroup, service, cityName) {
  * descriptions. Assumes generateCompliantCopy_() has already filtered the
  * arrays to Google's length limits and minimum-count requirements.
  */
-function createResponsiveSearchAd_(adGroup, copy) {
-  var adBuilder = adGroup.newAd().responsiveSearchAdBuilder()
-    .withFinalUrl(CONFIG.FINAL_URL);
+function createResponsiveSearchAd_(adGroupResourceName, copy) {
+  var headlineAssets = copy.headlines.map(function (text) { return { text: text }; });
+  var descriptionAssets = copy.descriptions.map(function (text) { return { text: text }; });
 
-  for (var h = 0; h < copy.headlines.length; h++) {
-    adBuilder = adBuilder.addHeadline(copy.headlines[h]);
+  try {
+    mutateOrThrow_({
+      adGroupAdOperation: {
+        create: {
+          adGroup: adGroupResourceName,
+          status: 'ENABLED',
+          ad: {
+            finalUrls: [CONFIG.FINAL_URL],
+            responsiveSearchAd: {
+              headlines: headlineAssets,
+              descriptions: descriptionAssets,
+            },
+          },
+        },
+      },
+    }, 'RSA creation');
+    Logger.log('Created RSA with ' + copy.headlines.length + ' headlines, ' + copy.descriptions.length + ' descriptions.');
+  } catch (e) {
+    Logger.log('WARNING: RSA creation failed: ' + e);
   }
-  for (var d = 0; d < copy.descriptions.length; d++) {
-    adBuilder = adBuilder.addDescription(copy.descriptions[d]);
-  }
-
-  var adOperation = adBuilder.build();
-  if (!adOperation.isSuccessful()) {
-    Logger.log('WARNING: RSA creation failed for ad group "' + adGroup.getName() + '": ' + JSON.stringify(adOperation.getErrors()));
-    return;
-  }
-  Logger.log('Created RSA for ad group "' + adGroup.getName() + '" with ' + copy.headlines.length + ' headlines, ' + copy.descriptions.length + ' descriptions.');
 }
 
 // ============================================================================
 // COPY GENERATION + VALIDATION
+// (unchanged from previous version — this logic has no AdsApp dependency
+// and was already executed standalone in Node against all 305 real
+// service x city combinations from config/cities.php, with zero overflow
+// and zero insufficient-copy cases)
 // ============================================================================
 
 var HEADLINE_MAX_LENGTH = 30;
 var DESCRIPTION_MAX_LENGTH = 90;
-var HEADLINE_MAX_COUNT = 15; // Google Ads RSA limit
-var DESCRIPTION_MAX_COUNT = 4; // Google Ads RSA limit
+var HEADLINE_MAX_COUNT = 15;
+var DESCRIPTION_MAX_COUNT = 4;
 
-/**
- * Generates headline/description candidates for a service+city pair, then
- * validates every single one against Google's character limits BEFORE
- * returning them. Anything oversized is REJECTED (dropped), never
- * truncated — a truncated headline can read as broken or misleading,
- * which is worse than simply having one fewer variant. Every rejection is
- * logged individually so nothing silently disappears without a trace.
- */
 function generateCompliantCopy_(service, cityName) {
   var headlineCandidates = [
     service,
@@ -396,11 +456,6 @@ function generateCompliantCopy_(service, cityName) {
   return { headlines: headlines, descriptions: descriptions };
 }
 
-/**
- * Filters a list of candidate strings down to ones that pass the given
- * max length, capped at maxCount, logging every single rejection with its
- * actual length so a human can see exactly what was dropped and why.
- */
 function validateCopyList_(candidates, maxLength, maxCount, label) {
   var valid = [];
   for (var i = 0; i < candidates.length; i++) {
