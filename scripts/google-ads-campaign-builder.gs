@@ -476,3 +476,65 @@ function validateCopyList_(candidates, maxLength, maxCount, label) {
   }
   return valid;
 }
+
+// ============================================================================
+// CONVERSION ACTIONS
+// ============================================================================
+// A separate, independent entry point — NOT called by main(). Run this
+// function on its own (select "createConversionActionsOnly" from the
+// function dropdown in the Ads Scripts editor before clicking Preview/Run)
+// to create the 4 standard conversion actions this account already uses,
+// matching exactly what's in the CRM's config/conversions.php:
+//   - BMT | Website Calls        (WEBSITE_CALL / PHONE_CALL_LEAD)
+//   - BMT | Click to Call        (CLICK_TO_CALL / PHONE_CALL_LEAD)
+//   - BMT | WhatsApp Contact     (WEBPAGE / CONTACT)
+//   - BMT | Lead Form Submitted  (WEBPAGE / SUBMIT_LEAD_FORM)
+//
+// After creating these, get the real tag code + conversion labels from
+// Google Ads under Goals > Summary > [action] > Tag setup — see this
+// project's conversion-tags-reference.md for the full walkthrough.
+
+var CONVERSION_ACTIONS = [
+  { name: 'BMT | Website Calls', type: 'WEBSITE_CALL', category: 'PHONE_CALL_LEAD' },
+  { name: 'BMT | Click to Call', type: 'CLICK_TO_CALL', category: 'PHONE_CALL_LEAD' },
+  { name: 'BMT | WhatsApp Contact', type: 'WEBPAGE', category: 'CONTACT' },
+  { name: 'BMT | Lead Form Submitted', type: 'WEBPAGE', category: 'SUBMIT_LEAD_FORM' },
+];
+
+function createConversionActionsOnly() {
+  Logger.log('=== BMT Conversion Actions — starting ===');
+  var stats = { created: 0, skipped: 0, failed: 0 };
+
+  for (var i = 0; i < CONVERSION_ACTIONS.length; i++) {
+    var action = CONVERSION_ACTIONS[i];
+    try {
+      var result = mutateOrThrow_({
+        conversionActionOperation: {
+          create: {
+            name: action.name,
+            type: action.type,
+            category: action.category,
+            status: 'ENABLED',
+          },
+        },
+      }, 'Conversion action "' + action.name + '"');
+      Logger.log('Created: "' + action.name + '" -> ' + result.getResourceName());
+      stats.created++;
+    } catch (e) {
+      // Google Ads returns a DUPLICATE_NAME error if this exact name
+      // already exists — treat that specific case as "already set up",
+      // not a real failure, so this function is safe to re-run.
+      if (String(e).indexOf('DUPLICATE_NAME') !== -1) {
+        Logger.log('Skipped "' + action.name + '" — already exists.');
+        stats.skipped++;
+      } else {
+        Logger.log('FAILED to create "' + action.name + '": ' + e);
+        stats.failed++;
+      }
+    }
+  }
+
+  Logger.log('=== BMT Conversion Actions — finished ===');
+  Logger.log('Created: ' + stats.created + ' | already existed: ' + stats.skipped + ' | failed: ' + stats.failed);
+  Logger.log('Next: Google Ads > Goals > Summary > [each action] > Tag setup, to get the real tag code + conversion labels.');
+}
