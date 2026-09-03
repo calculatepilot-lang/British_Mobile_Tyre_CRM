@@ -36,10 +36,9 @@ VERIFIED before writing this:
   "BMT | WhatsApp Contact" conversion labels are the exact real values
   from your Tag Assistant screenshots.
 
-STILL NEEDED FROM YOU before the phone-click tracking works:
-The CLICK_TO_CALL_LABEL placeholder below is not yet known — get it
-from Google Ads > Goals > Summary > "BMT | Click to Call" > Tag setup,
-and replace the placeholder with the real value.
+All three real conversion labels are now filled in — Lead Form Submitted,
+WhatsApp Contact, and Click to Call (AW-18394103339/DSwNCNPHn-0cEKv8_sJE,
+confirmed directly from Google Ads' own event snippet for that action).
 
 NOT tested live in a browser (I have no way to load your actual page
 and click through it) — I'd suggest testing on one page first (submit
@@ -55,7 +54,7 @@ it's working everywhere.
   var AW_ID = 'AW-18394103339';
   var LEAD_FORM_LABEL = AW_ID + '/gaUBCLTDn-0cEKv8_sJE';
   var WHATSAPP_LABEL = AW_ID + '/2n2iCPmJlu0cEKv8_sJE';
-  var CLICK_TO_CALL_LABEL = AW_ID + '/PASTE_CLICK_TO_CALL_LABEL_HERE'; // <-- fill this in
+  var CLICK_TO_CALL_LABEL = AW_ID + '/DSwNCNPHn-0cEKv8_sJE';
 
   var WHATSAPP_NUMBER = '443301226797';
   var LEAD_FORM_ID = '3'; // Fluent Form "Check Fitter Availability" — the shared form used site-wide
