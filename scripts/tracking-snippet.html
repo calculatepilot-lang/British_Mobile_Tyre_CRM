@@ -1,0 +1,131 @@
+<!--
+BMT — Click-to-Call + Lead Form + WhatsApp Redirect tracking
+==============================================================
+Install as ONE WPCode snippet: type "HTML Snippet", location
+"Site Wide Footer" (runs on every page, so it covers the homepage,
+Contact page, and all 113 city landing pages that share Fluent Form 3 —
+no per-page editing needed).
+
+Requires jQuery (already loaded site-wide by Fluent Forms itself) and
+gtag.js (already loaded via your existing GA4 tag — confirmed present:
+G-54XLP962YY / GT-WK5GXLH6 in Tag Assistant. A conversion event with an
+explicit send_to works once gtag.js itself is loaded, without needing a
+separate 'config' call for the AW- ID — this is Google's documented
+"event snippet only" installation method).
+
+VERIFIED before writing this:
+- Fluent Form 3's actual field names, queried directly from the live
+  database: input_text (Postcode), input_text_1 (Tyre size),
+  input_text_2 (Phone number), input_text_3 (Vehicle registration),
+  input_radio (Vehicle Type), checkbox[] (Locking nut available?).
+- Fluent Form 3's current confirmation setting, also queried directly:
+  redirectTo = "samePage" — confirming there is currently NO WhatsApp
+  redirect configured at all on the live form. This isn't a tracking
+  gap, it's a missing feature since the old custom form was replaced.
+- The fluentform_submission_success jQuery event name/signature, cross-
+  checked against Fluent Forms' own official developer documentation
+  and three independent working examples — not assumed from memory.
+- AW-18394103339 and the "BMT | Lead Form Submitted" /
+  "BMT | WhatsApp Contact" conversion labels are the exact real values
+  from your Tag Assistant screenshots.
+
+STILL NEEDED FROM YOU before the phone-click tracking works:
+The CLICK_TO_CALL_LABEL placeholder below is not yet known — get it
+from Google Ads > Goals > Summary > "BMT | Click to Call" > Tag setup,
+and replace the placeholder with the real value.
+
+NOT tested live in a browser (I have no way to load your actual page
+and click through it) — I'd suggest testing on one page first (submit
+a real test enquiry, confirm the WhatsApp redirect happens with the
+correct message, and check Tag Assistant / Google Ads' "Recent
+conversions" report to confirm both conversions fire) before assuming
+it's working everywhere.
+-->
+<script>
+(function ($) {
+  'use strict';
+
+  var AW_ID = 'AW-18394103339';
+  var LEAD_FORM_LABEL = AW_ID + '/gaUBCLTDn-0cEKv8_sJE';
+  var WHATSAPP_LABEL = AW_ID + '/2n2iCPmJlu0cEKv8_sJE';
+  var CLICK_TO_CALL_LABEL = AW_ID + '/PASTE_CLICK_TO_CALL_LABEL_HERE'; // <-- fill this in
+
+  var WHATSAPP_NUMBER = '443301226797';
+  var LEAD_FORM_ID = '3'; // Fluent Form "Check Fitter Availability" — the shared form used site-wide
+
+  function fireConversion(sendTo, callback) {
+    if (typeof gtag !== 'function') {
+      // gtag not available (blocked, or not loaded yet) — don't let
+      // tracking failure block the actual redirect.
+      if (callback) callback();
+      return;
+    }
+    var called = false;
+    function safeCallback() {
+      if (called) return;
+      called = true;
+      if (callback) callback();
+    }
+    gtag('event', 'conversion', { send_to: sendTo, event_callback: safeCallback });
+    // Fallback in case event_callback never fires (slow network, ad
+    // blocker partially interfering) — never leave the visitor stuck.
+    setTimeout(safeCallback, 1000);
+  }
+
+  // ---------------------------------------------------------------
+  // 1. Click to Call — any phone link, anywhere on the site
+  // ---------------------------------------------------------------
+  document.addEventListener('click', function (e) {
+    var link = e.target.closest ? e.target.closest('a[href^="tel:"]') : null;
+    if (!link) return;
+    fireConversion(CLICK_TO_CALL_LABEL, function () {});
+  }, true);
+
+  // ---------------------------------------------------------------
+  // 2. Lead Form Submitted + WhatsApp redirect with real field values
+  // ---------------------------------------------------------------
+  $(document).on('fluentform_submission_success', 'form.frm-fluent-form', function () {
+    var $form = $(this);
+    var formId = $form.data('form_id') || $form.attr('data-form_id');
+    if (String(formId) !== LEAD_FORM_ID) return;
+
+    // Fire "Lead Form Submitted" immediately — this one doesn't block
+    // anything, it just needs to fire.
+    fireConversion(LEAD_FORM_LABEL, function () {});
+
+    // Read the actual submitted values straight from the form fields —
+    // more reliable than assuming the shape of Fluent Forms' internal
+    // AJAX response object.
+    var postcode = ($form.find('[name="input_text"]').val() || '').trim();
+    var tyreSize = ($form.find('[name="input_text_1"]').val() || '').trim();
+    var phone = ($form.find('[name="input_text_2"]').val() || '').trim();
+    var vehicleReg = ($form.find('[name="input_text_3"]').val() || '').trim();
+    var vehicleType = ($form.find('[name="input_radio"]:checked').val() || '').trim();
+    var lockingNut = $form.find('[name="checkbox[]"]:checked')
+      .map(function () { return this.value; }).get().join(', ') || 'Not specified';
+
+    var lines = [
+      'New tyre enquiry from ' + window.location.href,
+      'Postcode: ' + (postcode || 'Not provided'),
+      'Tyre size: ' + (tyreSize || 'Not provided'),
+      'Vehicle type: ' + (vehicleType || 'Not specified'),
+      'Vehicle registration: ' + (vehicleReg || 'Not provided'),
+      'Locking nut available: ' + lockingNut,
+      'Phone: ' + (phone || 'Not provided'),
+    ];
+    var whatsappUrl = 'https://wa.me/' + WHATSAPP_NUMBER + '?text=' + encodeURIComponent(lines.join('\n'));
+
+    var redirected = false;
+    function goToWhatsApp() {
+      if (redirected) return;
+      redirected = true;
+      window.location.href = whatsappUrl;
+    }
+
+    // Fire "WhatsApp Contact" and only redirect once the tracking call
+    // has had a chance to send (or the fallback timeout fires) — an
+    // immediate redirect can cut the conversion beacon off mid-flight.
+    fireConversion(WHATSAPP_LABEL, goToWhatsApp);
+  });
+})(jQuery);
+</script>
