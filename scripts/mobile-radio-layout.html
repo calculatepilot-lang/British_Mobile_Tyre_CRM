@@ -1,0 +1,42 @@
+<!--
+BMT — Keep "Vehicle Type" (and "Locking nut available?") options horizontal
+on mobile, matching desktop
+=============================================================================
+Install as a SECOND WPCode snippet (separate from the tracking one), type
+"HTML Snippet", location "Site Wide Footer".
+
+WHAT THIS FIXES:
+Both the "Vehicle Type" radio group and "Locking nut available?" checkbox
+group on Fluent Form 3 already have Fluent Forms' own ff_list_inline class
+(confirmed by inspecting the actual rendered HTML) — that class is meant
+to lay options out horizontally. On desktop that's exactly what happens.
+On mobile, Fluent Forms' own default stylesheet
+(fluentform-public-default.css) forces .ff-el-form-check items to
+display:block below a certain screen width, which is what causes the
+vertical stacking in the screenshot — this isn't something broken in your
+site's own CSS, it's Fluent Forms' built-in mobile behavior for that class.
+
+This override only applies inside the same max-width:700px breakpoint your
+site's own theme CSS already uses elsewhere (bmt-expansion.css), so it
+won't affect desktop at all, and matches the site's existing responsive
+convention rather than introducing a new one.
+
+Applies to Fluent Form 3 specifically (site-wide, wherever it's embedded —
+homepage, Contact page, all 113+ city landing pages) since the selector is
+scoped to .frm-fluent-form.
+-->
+<style>
+@media (max-width: 700px) {
+  .frm-fluent-form .ff_list_inline .ff-el-input--content {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 8px 16px !important;
+  }
+  .frm-fluent-form .ff_list_inline .ff-el-form-check {
+    display: inline-flex !important;
+    align-items: center !important;
+    width: auto !important;
+    flex: 0 0 auto !important;
+  }
+}
+</style>
