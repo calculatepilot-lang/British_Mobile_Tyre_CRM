@@ -533,6 +533,25 @@ if ($path === '/changes/scan-campaigns' && $method === 'POST') {
         render('Google Ads', '<h1>Google Ads</h1><p class="notice">Scan failed: '.h($e->getMessage()).'</p><p><a href="/changes">Back to changes</a></p>', $user);
     }
 }
+if ($path === '/changes/collect-keyword-analytics' && $method === 'POST') {
+    if (!AuthService::verifyCsrf($_POST['csrf'] ?? null)) { http_response_code(419); render('Invalid request', '<h1>Invalid request</h1>', $user); }
+    try {
+        $report = (new \BMT\GoogleAds\ReportingService())->collectKeywordMetricsYesterday();
+        redirect('/changes?keywords_collected=' . (int) $report['count'] . '&metric_date=' . urlencode($report['metric_date']));
+    } catch (\Throwable $e) {
+        render('Google Ads', '<h1>Google Ads</h1><p class="notice">Keyword collection failed: '.h($e->getMessage()).'</p><p><a href="/changes">Back</a></p>', $user);
+    }
+}
+if ($path === '/changes/run-cpc-optimizer' && $method === 'POST') {
+    if (!AuthService::verifyCsrf($_POST['csrf'] ?? null)) { http_response_code(419); render('Invalid request', '<h1>Invalid request</h1>', $user); }
+    try {
+        $date = (new \DateTimeImmutable('yesterday'))->format('Y-m-d');
+        $queued = (new \BMT\Optimisation\CpcOptimiserService(new Database()))->queueDailyBidOptimisations($date);
+        redirect('/changes?bids_queued=' . count($queued));
+    } catch (\Throwable $e) {
+        render('Google Ads', '<h1>Google Ads</h1><p class="notice">CPC optimizer failed: '.h($e->getMessage()).'</p><p><a href="/changes">Back</a></p>', $user);
+    }
+}
 if ($path === '/changes/collect-analytics' && $method === 'POST') {
     if (!AuthService::verifyCsrf($_POST['csrf'] ?? null)) { http_response_code(419); render('Invalid request', '<h1>Invalid request</h1>', $user); }
     try {
@@ -920,6 +939,13 @@ if ($path === '/changes') {
             $decoded = json_decode((string) $c['after_state'], true);
             $rows .= '<tr><td colspan="8" style="background:#F5F7FF;padding:12px 14px;color:var(--text)"><strong>Purpose:</strong> '.h($decoded['purpose']??'').'<br><strong>Type:</strong> '.h($decoded['type']??'').'&nbsp; <strong>Category:</strong> '.h($decoded['category']??'').'&nbsp; <strong>Primary:</strong> '.((!empty($decoded['primary']))?'Yes':'No').'</td></tr>';
         }
+
+        if (in_array($c['change_type'], ['increase_keyword_bid','decrease_keyword_bid'], true) && in_array($c['status'], ['pending_approval','planned'], true) && $c['after_state']) {
+            $decoded = json_decode((string) $c['after_state'], true);
+            $currentBid = number_format(((int)($decoded['current_cpc_bid_micros']??0))/1_000_000, 2);
+            $newBid = number_format(((int)($decoded['new_cpc_bid_micros']??0))/1_000_000, 2);
+            $rows .= '<tr><td colspan="8" style="background:#F5F7FF;padding:12px 14px;color:var(--text)"><strong>Keyword:</strong> '.h($decoded['keyword_text']??'').' ['.h($decoded['match_type']??'').']&nbsp; <strong>Ad group:</strong> '.h($decoded['ad_group_name']??'').'<br><strong>Bid:</strong> '.h($currentBid).' &rarr; '.h($newBid).' ('.h((float)($decoded['proposed_change_percent']??0) > 0 ? '+' : '').h(number_format((float)($decoded['proposed_change_percent']??0),0)).'%)&nbsp; <strong>Clicks:</strong> '.h($decoded['clicks']??0).'&nbsp; <strong>Conversions:</strong> '.h($decoded['conversions']??0).'</td></tr>';
+        }
     }
     $flash='';
     if (isset($_GET['executed']) || isset($_GET['failed'])) {
@@ -937,6 +963,12 @@ if ($path === '/changes') {
     if (isset($_GET['conversions_queued'])) {
         $flash.='<p class="notice" style="background:#e6f4ea;color:#1e4620;border-color:#b7dfc0">'.(int)$_GET['conversions_queued'].' new conversion action proposal(s) queued below for review.</p>';
     }
+    if (isset($_GET['keywords_collected'])) {
+        $flash.='<p class="notice" style="background:#e6f4ea;color:#1e4620;border-color:#b7dfc0">Collected metrics for '.(int)$_GET['keywords_collected'].' keyword(s) on '.h($_GET['metric_date']??'').'. Now click \"Run CPC optimizer\" to propose bid changes from this data.</p>';
+    }
+    if (isset($_GET['bids_queued'])) {
+        $flash.='<p class="notice" style="background:#e6f4ea;color:#1e4620;border-color:#b7dfc0">'.(int)$_GET['bids_queued'].' keyword bid change proposal(s) queued below for review.</p>';
+    }
     $runButton = $approvedCount > 0
         ? '<form method="post" action="/changes/run-approved" onsubmit="return confirm(\'This will apply '.(int)$approvedCount.' approved change(s) to your live Google Ads account. Continue?\')"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><button>Run '.(int)$approvedCount.' approved change(s)</button></form>'
         : '';
@@ -945,6 +977,8 @@ if ($path === '/changes') {
     $scanServiceCampaignsButton = '<form method="post" action="/changes/scan-service-campaigns"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><button style="background:var(--surface);color:var(--text);border:1.5px solid var(--border)">Build 5 service campaigns (40 ad groups)</button></form>';
     $scanConversionsButton = '<form method="post" action="/changes/scan-conversions"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><button style="background:var(--surface);color:var(--text);border:1.5px solid var(--border)">Scan for missing conversion actions</button></form>';
     $analyticsButton = '<form method="post" action="/changes/collect-analytics"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><button style="background:var(--surface);color:var(--text);border:1.5px solid var(--border)">View Ad Analytics (yesterday)</button></form>';
+    $collectKeywordsButton = '<form method="post" action="/changes/collect-keyword-analytics"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><button style="background:var(--surface);color:var(--text);border:1.5px solid var(--border)">Collect keyword metrics (yesterday)</button></form>';
+    $runCpcOptimizerButton = '<form method="post" action="/changes/run-cpc-optimizer"><input type="hidden" name="csrf" value="'.h(AuthService::csrfToken()).'"><button style="background:var(--surface);color:var(--text);border:1.5px solid var(--border)">Run CPC optimizer</button></form>';
     if (isset($_GET['bulk_approved']) || isset($_GET['bulk_approve_failed'])) {
         $flash.='<p class="notice" style="background:#e6f4ea;color:#1e4620;border-color:#b7dfc0">Approved '.(int)($_GET['bulk_approved']??0).' change(s).'.((int)($_GET['bulk_approve_failed']??0) > 0 ? ' '.(int)$_GET['bulk_approve_failed'].' could not be approved.' : '').'</p>';
     }
@@ -975,7 +1009,7 @@ function bmtBulkSubmit(action, confirmMsg){
   f.submit();
 }
 </script>';
-    render('Google Ads','<div class="toolbar"><div><h1>Google Ads</h1><p>Automation mode: <strong>'.h(envValue('AUTOMATION_MODE','audit_only')).'</strong>. Approving a change only marks it ready — nothing reaches Google Ads until you click below, so you control exactly when each batch of changes goes live. Campaigns are always created PAUSED and never auto-enabled.</p></div><div style="display:flex;gap:10px;flex-wrap:wrap">'.$scanServiceCampaignsButton.$scanCampaignsButton.$scanAdGroupsButton.$scanConversionsButton.$analyticsButton.$clearFailedButton.$runButton.'</div></div>'.$flash
+    render('Google Ads','<div class="toolbar"><div><h1>Google Ads</h1><p>Automation mode: <strong>'.h(envValue('AUTOMATION_MODE','audit_only')).'</strong>. Approving a change only marks it ready — nothing reaches Google Ads until you click below, so you control exactly when each batch of changes goes live. Campaigns are always created PAUSED and never auto-enabled.</p></div><div style="display:flex;gap:10px;flex-wrap:wrap">'.$scanServiceCampaignsButton.$scanCampaignsButton.$scanAdGroupsButton.$scanConversionsButton.$analyticsButton.$collectKeywordsButton.$runCpcOptimizerButton.$clearFailedButton.$runButton.'</div></div>'.$flash
         .$bulkScript
         .'<div style="display:flex;gap:10px;margin-bottom:10px">'
         .'<button type="button" onclick="bmtBulkSubmit(\'/changes/bulk-approve\', null)">Approve selected</button>'

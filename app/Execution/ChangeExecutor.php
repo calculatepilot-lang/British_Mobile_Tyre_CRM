@@ -109,6 +109,7 @@ final class ChangeExecutor
                     'add_ad_group_content' => $this->addAdGroupContent($change),
                     'increase_budget', 'decrease_budget' => $this->changeBudget($change),
                     'pause_campaign' => $this->pauseCampaign($change),
+                    'increase_keyword_bid', 'decrease_keyword_bid' => $this->adjustKeywordBid($change),
                     default => null,
                 };
 
@@ -151,6 +152,7 @@ final class ChangeExecutor
                     'add_ad_group_content' => $this->addAdGroupContent($change),
                     'increase_budget', 'decrease_budget' => $this->changeBudget($change),
                     'pause_campaign' => $this->pauseCampaign($change),
+                    'increase_keyword_bid', 'decrease_keyword_bid' => $this->adjustKeywordBid($change),
                     default => null,
                 };
 
@@ -369,6 +371,46 @@ final class ChangeExecutor
                 'Spot-check a few ad groups\' keywords and ad copy before enabling.',
                 'Switch campaign status to ENABLED in the Google Ads UI once satisfied.',
             ],
+        ];
+    }
+
+    /**
+     * Applies an approved keyword bid change from CpcOptimiserService.
+     * Updates ONLY cpc_bid_micros via an explicit field mask — never
+     * touches status, match type, or anything else on the criterion.
+     */
+    private function adjustKeywordBid(array $change): array
+    {
+        $after = json_decode((string) $change['after_state'], true, 512, JSON_THROW_ON_ERROR);
+        $client = Client::make();
+        $customerId = Client::customerId();
+
+        $resourceName = (string) $change['resource_name'];
+        $newBidMicros = (int) ($after['new_cpc_bid_micros'] ?? 0);
+        $previousBidMicros = (int) ($after['current_cpc_bid_micros'] ?? 0);
+
+        if ($resourceName === '' || $newBidMicros <= 0) {
+            throw new RuntimeException('Cannot adjust bid — missing resource name or invalid new bid.');
+        }
+
+        $criterion = new AdGroupCriterion([
+            'resource_name' => $resourceName,
+            'cpc_bid_micros' => $newBidMicros,
+        ]);
+        $operation = new AdGroupCriterionOperation();
+        $operation->setUpdate($criterion);
+        $operation->setUpdateMask(new FieldMask(['paths' => ['cpc_bid_micros']]));
+
+        $client->getAdGroupCriterionServiceClient()->mutateAdGroupCriteria(new MutateAdGroupCriteriaRequest([
+            'customer_id' => (string) $customerId,
+            'operations' => [$operation],
+        ]));
+
+        return [
+            'resource_id' => $resourceName,
+            'action' => 'keyword_bid_adjusted',
+            'previous_state' => ['cpc_bid_micros' => $previousBidMicros],
+            'new_cpc_bid_micros' => $newBidMicros,
         ];
     }
 
