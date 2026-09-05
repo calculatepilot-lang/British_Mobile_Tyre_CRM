@@ -40,6 +40,65 @@ function h(mixed $value): string { return htmlspecialchars((string) $value, ENT_
 // also can't hold a CRM login session and needs its own token auth instead.
 // Protected by LEAD_API_KEY (a value that already existed in .env.example
 // but had no route using it until now).
+// Same purpose as /webhook/lead below, but at the EXACT path the
+// already-installed "British Mobile Tyres CRM Connector" WordPress plugin
+// is already configured (and enabled) to call — confirmed live via
+// wp_options: bmt_crm_connector_options -> api_url =
+// ".../api/leads.php". That plugin already listens for every new Fluent
+// Form submission and forwards it automatically; this endpoint was simply
+// missing on the CRM side until now, which is why leads have not been
+// reaching the CRM despite the plugin being active. Accepts the API key
+// via several common conventions since the plugin's exact request format
+// couldn't be read directly (header, JSON field, form field, or query
+// param) — whichever it actually uses, this matches.
+if ($path === '/api/leads.php' && $method === 'POST') {
+    header('Content-Type: application/json');
+    $expectedKey = envValue('LEAD_API_KEY', '');
+    $raw = file_get_contents('php://input');
+    $data = json_decode((string) $raw, true);
+    if (!is_array($data)) {
+        $data = $_POST;
+    }
+    $providedKey = $_SERVER['HTTP_X_API_KEY']
+        ?? $_SERVER['HTTP_X_LEAD_API_KEY']
+        ?? ($data['api_key'] ?? null)
+        ?? ($_GET['key'] ?? '');
+    if ($expectedKey === '' || !hash_equals($expectedKey, (string) $providedKey)) {
+        http_response_code(401);
+        echo json_encode(['ok' => false, 'error' => 'Invalid or missing API key']);
+        exit;
+    }
+
+    try {
+        $leadId = (new \BMT\Leads\LeadService())->create([
+            'lead_type' => 'form',
+            'source' => 'website_form',
+            'customer_name' => $data['customer_name'] ?? null,
+            'customer_phone' => $data['phone'] ?? $data['customer_phone'] ?? null,
+            'customer_email' => $data['email'] ?? $data['customer_email'] ?? null,
+            'service_requested' => $data['service_requested'] ?? null,
+            'tyre_size' => $data['tyre_size'] ?? null,
+            'vehicle_registration' => $data['vehicle_registration'] ?? null,
+            'locking_nut' => $data['locking_nut'] ?? null,
+            'vehicle_type' => $data['vehicle_type'] ?? null,
+            'postcode' => $data['postcode'] ?? null,
+            'source_page_url' => $data['source_page_url'] ?? null,
+            'source_page_label' => $data['source_page_label'] ?? null,
+        ], [
+            'gclid' => $data['gclid'] ?? null,
+            'gbraid' => $data['gbraid'] ?? null,
+            'wbraid' => $data['wbraid'] ?? null,
+            'utm_source' => $data['utm_source'] ?? null,
+            'utm_medium' => $data['utm_medium'] ?? null,
+            'utm_campaign' => $data['utm_campaign'] ?? null,
+        ]);
+        echo json_encode(['ok' => true, 'lead_id' => $leadId, 'message' => 'Lead saved to CRM']);
+    } catch (\Throwable $e) {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    }
+    exit;
+}
 if ($path === '/webhook/lead' && $method === 'POST') {
     header('Content-Type: application/json');
     $expectedKey = envValue('LEAD_API_KEY', '');
