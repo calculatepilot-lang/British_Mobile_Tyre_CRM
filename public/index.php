@@ -34,7 +34,60 @@ $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
 function h(mixed $value): string { return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8'); }
 
-// Read-only, token-authenticated JSON endpoint for external scripts (e.g. a
+// Read-only cities endpoint stays above the login gate (see /api/cities.json
+// right below); this is the equivalent for INBOUND lead delivery — an
+// external form (the live website's Fluent Form) posts here directly, so it
+// also can't hold a CRM login session and needs its own token auth instead.
+// Protected by LEAD_API_KEY (a value that already existed in .env.example
+// but had no route using it until now).
+if ($path === '/webhook/lead' && $method === 'POST') {
+    header('Content-Type: application/json');
+    $expectedKey = envValue('LEAD_API_KEY', '');
+    $providedKey = $_SERVER['HTTP_X_LEAD_API_KEY'] ?? ($_GET['key'] ?? '');
+    if ($expectedKey === '' || !hash_equals($expectedKey, (string) $providedKey)) {
+        http_response_code(401);
+        echo json_encode(['error' => 'Invalid or missing API key']);
+        exit;
+    }
+
+    $raw = file_get_contents('php://input');
+    $data = json_decode((string) $raw, true);
+    if (!is_array($data)) {
+        // Also accept regular form-encoded POST (what Fluent Forms' native
+        // Webhook integration sends by default), not just JSON.
+        $data = $_POST;
+    }
+
+    try {
+        $leadId = (new \BMT\Leads\LeadService())->create([
+            'lead_type' => 'form',
+            'source' => 'website_form',
+            'customer_name' => $data['customer_name'] ?? null,
+            'customer_phone' => $data['phone'] ?? $data['customer_phone'] ?? null,
+            'customer_email' => $data['email'] ?? $data['customer_email'] ?? null,
+            'service_requested' => $data['service_requested'] ?? null,
+            'tyre_size' => $data['tyre_size'] ?? null,
+            'vehicle_registration' => $data['vehicle_registration'] ?? null,
+            'locking_nut' => $data['locking_nut'] ?? null,
+            'vehicle_type' => $data['vehicle_type'] ?? null,
+            'postcode' => $data['postcode'] ?? null,
+            'source_page_url' => $data['source_page_url'] ?? null,
+            'source_page_label' => $data['source_page_label'] ?? null,
+        ], [
+            'gclid' => $data['gclid'] ?? null,
+            'gbraid' => $data['gbraid'] ?? null,
+            'wbraid' => $data['wbraid'] ?? null,
+            'utm_source' => $data['utm_source'] ?? null,
+            'utm_medium' => $data['utm_medium'] ?? null,
+            'utm_campaign' => $data['utm_campaign'] ?? null,
+        ]);
+        echo json_encode(['success' => true, 'lead_id' => $leadId]);
+    } catch (\Throwable $e) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    }
+    exit;
+}
 // Google Ads Script, which runs on Google's servers and can't hold a CRM
 // login session) to fetch the current city list without hard-coding it.
 // Set CRM_API_TOKEN in .env — this endpoint refuses to respond without a
