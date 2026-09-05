@@ -69,6 +69,23 @@ if ($path === '/api/leads.php' && $method === 'POST') {
         exit;
     }
 
+    // The WordPress CRM Connector plugin has been observed sending two
+    // calls per real submission — one carrying full field data, one with
+    // everything blank (same second, same page) — likely firing on two
+    // different Fluent Forms hooks internally. Rather than guess at the
+    // plugin's own logic (no source access to it), skip creating a lead
+    // when the payload has none of the three fields that could actually
+    // identify a real enquiry. Returns a success-shaped response (not an
+    // error) so the plugin doesn't treat this as a failure — there's
+    // simply nothing worth recording.
+    $hasIdentifyingData = trim((string) ($data['phone'] ?? $data['customer_phone'] ?? '')) !== ''
+        || trim((string) ($data['postcode'] ?? '')) !== ''
+        || trim((string) ($data['email'] ?? $data['customer_email'] ?? '')) !== '';
+    if (!$hasIdentifyingData) {
+        echo json_encode(['ok' => true, 'skipped' => true, 'reason' => 'No phone, postcode, or email in payload — nothing to record.']);
+        exit;
+    }
+
     try {
         $leadId = (new \BMT\Leads\LeadService())->create([
             'lead_type' => 'form',
@@ -115,6 +132,16 @@ if ($path === '/webhook/lead' && $method === 'POST') {
         // Also accept regular form-encoded POST (what Fluent Forms' native
         // Webhook integration sends by default), not just JSON.
         $data = $_POST;
+    }
+
+    // Same empty-payload guard as /api/leads.php — see the comment there
+    // for why this exists.
+    $hasIdentifyingData = trim((string) ($data['phone'] ?? $data['customer_phone'] ?? '')) !== ''
+        || trim((string) ($data['postcode'] ?? '')) !== ''
+        || trim((string) ($data['email'] ?? $data['customer_email'] ?? '')) !== '';
+    if (!$hasIdentifyingData) {
+        echo json_encode(['success' => true, 'skipped' => true, 'reason' => 'No phone, postcode, or email in payload — nothing to record.']);
+        exit;
     }
 
     try {
