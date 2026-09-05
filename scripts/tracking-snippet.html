@@ -24,7 +24,12 @@ VERIFIED before writing this:
 - Fluent Form 3's actual field names, queried directly from the live
   database: input_text (Postcode), input_text_1 (Tyre size),
   input_text_2 (Phone number), input_text_3 (Vehicle registration),
-  input_radio (Vehicle Type), checkbox[] (Locking nut available?).
+  checkbox[] (Locking nut available?).
+- Vehicle Type was converted from a radio group (input_radio) to a
+  native dropdown by hand in the Fluent Forms editor — the new field's
+  name attribute is "dropdown" (confirmed live via DB query), NOT
+  input_radio. Reading it now uses plain .val() (a <select> has no
+  :checked state the way radio buttons do).
 - Fluent Form 3's current confirmation setting, also queried directly:
   redirectTo = "samePage" — confirming there is currently NO WhatsApp
   redirect configured at all on the live form. This isn't a tracking
@@ -124,7 +129,7 @@ it's working everywhere.
       var tyreSize = ($form.find('[name="input_text_1"]').val() || '').trim();
       var phone = ($form.find('[name="input_text_2"]').val() || '').trim();
       var vehicleReg = ($form.find('[name="input_text_3"]').val() || '').trim();
-      var vehicleType = ($form.find('[name="input_radio"]:checked').val() || '').trim();
+      var vehicleType = ($form.find('[name="dropdown"]').val() || '').trim();
       var lockingNut = $form.find('[name="checkbox[]"]:checked')
         .map(function () { return this.value; }).get().join(', ') || 'Not specified';
 
