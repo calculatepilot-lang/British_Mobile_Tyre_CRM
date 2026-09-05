@@ -83,16 +83,29 @@ VERIFIED before writing this:
   }
 
   whenjQueryReady(function ($) {
-    console.log(LOG_PREFIX, 'binding fluentform_submission_success listener on document');
-    $(document).on('fluentform_submission_success', 'form.frm-fluent-form', function () {
-      console.log(LOG_PREFIX, 'fluentform_submission_success FIRED');
+    // Bind DIRECTLY on each matching form element, not via delegation
+    // from document. Every documented working example of this event
+    // does the same — $form.on('fluentform_submission_success', ...) —
+    // never $(document).on('fluentform_submission_success', selector,
+    // ...). An earlier version of this script used delegation and the
+    // event never fired in testing (confirmed live: form submitted
+    // successfully, lead reached the CRM, but the console never logged
+    // "FIRED") — Fluent Forms' custom event apparently doesn't bubble
+    // to document the way delegation requires, so direct binding is the
+    // only pattern anyone has documented as actually working.
+    var $forms = $('form.frm-fluent-form');
+    console.log(LOG_PREFIX, 'found', $forms.length, 'matching form(s) to bind directly');
+    $forms.each(function () {
       var $form = $(this);
       var formId = $form.data('form_id') || $form.attr('data-form_id');
-      console.log(LOG_PREFIX, 'form_id detected as:', formId, '(expecting:', LEAD_FORM_ID, ')');
+      console.log(LOG_PREFIX, 'binding directly on form with data-form_id:', formId);
       if (String(formId) !== LEAD_FORM_ID) {
-        console.log(LOG_PREFIX, 'form_id mismatch — skipping this form');
+        console.log(LOG_PREFIX, 'form_id mismatch — not binding on this one');
         return;
       }
+
+      $form.on('fluentform_submission_success', function () {
+        console.log(LOG_PREFIX, 'fluentform_submission_success FIRED');
 
       fireConversion(LEAD_FORM_LABEL, function () {});
 
@@ -127,6 +140,7 @@ VERIFIED before writing this:
       }
 
       fireConversion(WHATSAPP_LABEL, goToWhatsApp);
+      });
     });
   });
 })();
